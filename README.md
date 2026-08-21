@@ -2,7 +2,7 @@
 
 A Uniswap v4 hook that enforces pool-native batch settlement with a uniform clearing price — no swap can execute against a Walras-governed pool outside a settled batch, eliminating ordering-based MEV while netting offsetting order flow away from LP liquidity.
 
-Built for the [UHI10 Hookathon] (theme: *Sustainable Liquidity and MEV Protection*).
+Built for the [UHI10 Hookathon](https://atrium.academy/uniswap) (theme: *Sustainable Liquidity and MEV Protection*).
 
 ## The problem
 
