@@ -105,7 +105,7 @@ frontend/                   — batch status and claims (minimal; the mechanism 
 Contract build is broken into sections, in dependency order:
 
 1. **Hook shell + exclusivity enforcement** — `beforeSwap` rejects any swap whose caller isn't the authorized settler. Validated first as a standalone spike, since every later section depends on this assumption holding. Done, 3/3 tests passing.
-2. **Order escrow / intent submission** — pulls input tokens into custody, records intents against the current batch.
+2. **Order escrow / intent submission** — pulls input tokens into custody, records intents against the current batch. Done, 15/15 tests passing.
 3. **Batch lifecycle management** — tracks window open/close, self-triggers settlement of the prior batch on the next interaction, funds and pays the settlement bounty.
 4. **Order netting engine** — pure matching logic: pairs opposite-direction orders, computes the residual.
 5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. No oracle: `P*` falls out of the residual's own walk along the curve, which makes it a function of the batch and the pool alone.
@@ -130,4 +130,4 @@ forge test -vv
 
 ## Status
 
-Section 1 of 8 complete. See the section breakdown above for what's next.
+Sections 1 and 2 of 8 complete. See the section breakdown above for what's next.
