@@ -83,6 +83,10 @@ These are real and unresolved, and are called out here rather than left for some
 
 **Settlement is a single point of failure.** If the settlement path ever reverts, the pool becomes unusable, since nothing else is permitted to swap against it. A circuit breaker that relaxes exclusivity after a sustained settlement failure is part of the hardening section for exactly this reason.
 
+**Concentrated liquidity is priced approximately.** The clearing price solves against a single liquidity value, which is exact for a position spanning the full range but not for one whose liquidity changes at a tick the residual crosses. The solver reports when its answer left the tick the pool started in, so the case is detected rather than silently mispriced. Handling it properly means walking tick boundaries and order limit prices as a combined set of breakpoints, solving the same quadratic within each segment — the same shape as a swap loop, and specified but not built.
+
+**Orders at a limit-price discontinuity are not yet rationed.** A limit price makes eligible volume jump, and the clearing price can land exactly on that jump, where the eligible orders over-supply the batch. The correct response is to fill the marginal order partially — exactly the amount that balances — rather than all of it or none. The solver returns the right price in this case; settlement currently does not ration at it.
+
 **Execution certainty is worse than a spot swap.** Batching means waiting, and a limit price means a batch can fail to fill. That is the inherent trade against continuous trading, not a bug in this implementation.
 
 ## Architecture
@@ -92,7 +96,8 @@ contracts/
 ├── src/
 │   ├── WalrasHook.sol      — beforeSwap exclusivity enforcement, escrow, batch lifecycle
 │   ├── libraries/
-│   │   └── Netting.sol     — eligibility, internal matching, residual computation
+│   │   ├── Netting.sol       — eligibility, internal matching, residual computation
+│   │   └── ClearingPrice.sol — solves batch supply/demand against the curve for P*
 │   ├── types/
 │   │   └── Order.sol       — the escrowed swap intent, shared by hook and netting
 │   └── mocks/
@@ -101,7 +106,8 @@ contracts/
 │   ├── WalrasHookExclusivity.t.sol
 │   ├── WalrasHookOrderEscrow.t.sol
 │   ├── WalrasHookBatchLifecycle.t.sol
-│   └── Netting.t.sol
+│   ├── Netting.t.sol
+│   └── ClearingPrice.t.sol
 ├── script/                 — deployment scripts (CREATE2 hook mining)
 ├── lib/                    — v4-core, v4-periphery, forge-std
 ├── foundry.toml
@@ -115,7 +121,7 @@ Contract build is broken into sections, in dependency order:
 2. **Order escrow / intent submission** — pulls input tokens into custody, records intents against the current batch. Done, 15/15 tests passing.
 3. **Batch lifecycle management** — a batch's window starts on its first order rather than on the previous batch's close, so an idle pool runs no timer and never accumulates empty batches. The first interaction past the window retires the batch and opens the next; `poke()` lets anyone do this without trading, for pools that go quiet. Whoever triggers the close is recorded, since they are the party section 6 reimburses. Done, 17/17 tests passing.
 4. **Order netting engine** — pure matching logic, no pool and no state: which orders are eligible at a candidate price, how much offsets internally, and what imbalance is left over. Netting and pricing are one fixed point — you cannot offset currency0 against currency1 without a price — so this section answers the netting half exactly for a price given to it, and section 5 solves for the price that makes the answer self-consistent. Done, 18/18 tests passing.
-5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. No oracle: `P*` falls out of the residual's own walk along the curve, which makes it a function of the batch and the pool alone.
+5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. Setting batch excess demand equal to what the curve absorbs gives a quadratic in sqrt-price whose positive root is `P*`, so no oracle appears anywhere and no search is needed in the common case. One equation covers both directions, and it self-checks: a batch already balanced at the pool's price returns that price exactly. Limit prices make eligible volume a step function, so the closed form is iterated until the set of orders eligible at the answer is the set the answer was computed from. Done, 13/13 tests passing.
 6. **Residual settlement and LP donation** — ties (1), (4), and (5) together: executes the net residual against the pool via `PoolManager.swap()` gated by the exclusivity check, settles every order at `P*`, donates both the marginal-vs-average surplus and the netted-volume fee to LPs, and pays the settlement bounty to whoever closed the batch. Closing a batch is O(1) and needs no incentive; settling it is O(n), which is why the bounty lives here rather than with the lifecycle.
 7. **Payouts / claims** — pull-based withdrawal of settled proceeds.
 8. **Hardening** — settlement circuit breaker, deadline expiry, zero-residual batches, all-one-direction batches, decimal/token-ordering edge cases, reentrancy.
@@ -137,4 +143,4 @@ forge test -vv
 
 ## Status
 
-Sections 1 through 4 of 8 complete. 53 tests passing. See the section breakdown above for what's next.
+Sections 1 through 5 of 8 complete. 66 tests passing. See the section breakdown above for what's next.
