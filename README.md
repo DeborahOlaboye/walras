@@ -81,7 +81,7 @@ These are real and unresolved, and are called out here rather than left for some
 
 **Composability is deliberately sacrificed.** A pool whose `beforeSwap` reverts for every caller but one is invisible to the Universal Router, to aggregators, and to the Uniswap interface. This is the direct cost of making protection pool-level instead of opt-in, and it caps how much liquidity such a pool can realistically attract. Walras is a claim that some pairs are worth trading this way, not that every pool should be.
 
-**Settlement is a single point of failure.** If the settlement path ever reverts, the pool becomes unusable, since nothing else is permitted to swap against it. A circuit breaker that relaxes exclusivity after a sustained settlement failure is part of the hardening section for exactly this reason.
+**A failed settlement costs its batch a turn.** Settlement runs behind a catchable boundary, so a batch that cannot settle is marked failed and refunds every order rather than stranding the escrow or bricking the pool — but those orders do not trade, and have to be resubmitted. Settlement is also capped at a fixed number of orders per batch, so an unusually busy window pushes the overflow into the next batch instead of past the block gas limit.
 
 **Concentrated liquidity is priced approximately.** The clearing price solves against a single liquidity value, which is exact for a position spanning the full range but not for one whose liquidity changes at a tick the residual crosses. The solver reports when its answer left the tick the pool started in, so the case is detected rather than silently mispriced. Handling it properly means walking tick boundaries and order limit prices as a combined set of breakpoints, solving the same quadratic within each segment — the same shape as a swap loop, and specified but not built.
 
@@ -108,6 +108,7 @@ contracts/
 │   ├── WalrasHookBatchLifecycle.t.sol
 │   ├── WalrasHookSettlement.t.sol
 │   ├── WalrasHookClaims.t.sol
+│   ├── WalrasHookHardening.t.sol
 │   ├── Netting.t.sol
 │   └── ClearingPrice.t.sol
 ├── script/                 — deployment scripts (CREATE2 hook mining)
@@ -126,7 +127,7 @@ Contract build is broken into sections, in dependency order:
 5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. Setting batch excess demand equal to what the curve absorbs gives a quadratic in sqrt-price whose positive root is `P*`, so no oracle appears anywhere and no search is needed in the common case. One equation covers both directions, and it self-checks: a batch already balanced at the pool's price returns that price exactly. Limit prices make eligible volume a step function, so the closed form is iterated until the set of orders eligible at the answer is the set the answer was computed from. Done, 13/13 tests passing.
 6. **Residual settlement and LP donation** — ties (1), (4), and (5) together: executes the net residual against the pool via `PoolManager.swap()` gated by the exclusivity check, settles every order at `P*`, donates both the marginal-vs-average surplus and the netted-volume fee to LPs, and pays the settlement bounty out of that same surplus. Closing a batch is O(1) and needs no incentive; settling it is O(n), which is why the bounty lives here rather than with the lifecycle. Reserved payouts are capped at what the batch actually holds, so a shortfall scales every claim on that side equally rather than leaving one unpayable — the effective price stays uniform. Done, 10/10 tests passing.
 7. **Payouts / claims** — pull-based withdrawal of settled proceeds. Paying every order out during settlement would make the closing caller's gas scale with batch size and let one failing recipient revert the whole settlement, so proceeds are reserved and withdrawn separately. Anyone may call `claim`; the proceeds go to the order's owner regardless. An order that could not fill — priced out by its own limit, or expired before the close — never entered the netting, so its input comes back whole. Eligibility is judged as of the batch's close, never the present: every deadline is in the past by claim time, and judging against `block.timestamp` there would report the whole batch expired. Done, 12/12 tests passing.
-8. **Hardening** — settlement circuit breaker, deadline expiry, zero-residual batches, all-one-direction batches, decimal/token-ordering edge cases, reentrancy.
+8. **Hardening** — a settlement circuit breaker, since exclusivity means a batch that cannot settle would strand its escrow and leave the pool permanently unusable: settlement runs behind a catchable boundary, and a batch that reverts is marked failed and refunds every order instead. Plus a per-batch order cap so settlement cannot be pushed past the block gas limit, rejection of tokens that deliver less than they were asked to move, and a re-entrancy guard on every state-changing entry point. Done, 10/10 tests passing.
 
 ## Tech stack
 
@@ -145,4 +146,8 @@ forge test -vv
 
 ## Status
 
-Sections 1 through 7 of 8 complete. 87 tests passing. Hardening (8) remains. See the section breakdown above for what's next.
+All 8 sections complete. 97 tests passing, no compiler warnings.
+
+The contract side is feature-complete: orders escrow, batches open and retire themselves, netting and the clearing price resolve on-chain with no oracle, the residual executes once against the curve, LPs are paid on both netted and residual flow, proceeds are claimable, and a settlement that fails refunds its batch rather than taking the pool down with it.
+
+Remaining work is deployment to Unichain Sepolia and the frontend. See the section breakdown above for what's next.

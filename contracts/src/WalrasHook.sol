@@ -84,6 +84,22 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// @notice Thrown when an order's proceeds have already been withdrawn.
     error AlreadyClaimed();
 
+    /// @notice Thrown when a token delivers less than it was asked to transfer, as
+    /// fee-on-transfer and rebasing tokens do. Escrow totals would overstate what the
+    /// contract holds, so such tokens are refused at the door.
+    error InexactTransfer();
+
+    /// @notice Thrown when a batch already holds as many orders as settlement can afford
+    /// to walk.
+    error BatchFull();
+
+    /// @notice Thrown on re-entry into a state-changing entry point.
+    error Reentrancy();
+
+    /// @notice Thrown when the settlement entry point is called by anything but this
+    /// contract's own batch roll.
+    error NotSelf();
+
     /// @dev The bounty exists to cover gas, not to compete with the LP donation for the
     /// surplus. A tenth of it is generous for that purpose.
     uint16 internal constant MAX_SETTLEMENT_BOUNTY_BIPS = 1_000;
@@ -107,12 +123,17 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// @param closedAt When the window was observed to have elapsed. Zero while open.
     /// @param closedBy Whoever triggered the close, and therefore paid to settle the batch.
     /// Recorded so section 6 can reimburse them out of batch fees.
-    /// @param settled Whether settlement has completed. Set in section 6.
+    /// @param settled Whether the batch has been through settlement, successfully or not.
+    /// @param failed Whether settlement reverted. Exclusivity means nothing else can trade
+    /// against the pool, so a batch that cannot settle would otherwise strand its escrow
+    /// and brick the pool for good. A failed batch instead refunds every order its input
+    /// and lets the next batch proceed.
     struct Batch {
         uint64 openedAt;
         uint64 closedAt;
         address closedBy;
         bool settled;
+        bool failed;
     }
 
     /// @notice Emitted when a batch receives its first order and its window starts.
@@ -129,6 +150,10 @@ contract WalrasHook is IHooks, IUnlockCallback {
         uint256 donatedToLps0,
         uint256 donatedToLps1
     );
+
+    /// @notice Emitted when a batch's settlement reverted and its orders were refunded
+    /// rather than filled.
+    event BatchSettlementFailed(PoolId indexed poolId, uint256 indexed batchId);
 
     /// @notice Emitted when an order's proceeds are withdrawn.
     event OrderClaimed(
@@ -160,6 +185,15 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// else's behalf. The bounty comes out of the surplus settlement itself creates, so it
     /// is funded by the mechanism rather than charged to traders separately.
     uint16 public immutable settlementBountyBips;
+
+    /// @notice How many orders one batch may hold. Settlement walks the batch several
+    /// times over, so an unbounded batch is a way to push settlement past the block gas
+    /// limit and strand everyone in it. Orders beyond the cap fall into the next batch.
+    uint16 public immutable maxOrdersPerBatch;
+
+    /// @dev Guards the state-changing entry points. Settlement moves tokens and calls into
+    /// the PoolManager, and orders escrow tokens that may call back on transfer.
+    bool private _locked;
 
     /// @notice The batch currently accepting orders, per pool. Advanced by the batch
     /// lifecycle in section 3; until then every order lands in batch 0.
@@ -200,13 +234,27 @@ contract WalrasHook is IHooks, IUnlockCallback {
 
     mapping(PoolId => mapping(uint256 => Order[])) internal _orders;
 
-    constructor(IPoolManager _poolManager, uint64 _batchDuration, uint16 _settlementBountyBips) {
+    constructor(
+        IPoolManager _poolManager,
+        uint64 _batchDuration,
+        uint16 _settlementBountyBips,
+        uint16 _maxOrdersPerBatch
+    ) {
         if (_batchDuration == 0) revert ZeroBatchDuration();
         if (_settlementBountyBips > MAX_SETTLEMENT_BOUNTY_BIPS) revert BountyTooLarge();
+        if (_maxOrdersPerBatch == 0) revert BatchFull();
         poolManager = _poolManager;
         batchDuration = _batchDuration;
         settlementBountyBips = _settlementBountyBips;
+        maxOrdersPerBatch = _maxOrdersPerBatch;
         Hooks.validateHookPermissions(this, getHookPermissions());
+    }
+
+    modifier nonReentrant() {
+        if (_locked) revert Reentrancy();
+        _locked = true;
+        _;
+        _locked = false;
     }
 
     modifier onlyPoolManager() {
@@ -256,7 +304,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
         uint128 amountIn,
         uint160 sqrtPriceLimitX96,
         uint64 deadline
-    ) external payable returns (uint256 batchId, uint256 orderIndex) {
+    ) external payable nonReentrant returns (uint256 batchId, uint256 orderIndex) {
         if (address(key.hooks) != address(this)) revert PoolNotGoverned();
         if (amountIn == 0) revert ZeroAmount();
         if (deadline <= block.timestamp) revert OrderExpired();
@@ -273,6 +321,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
 
         batchId = currentBatchId[poolId];
         orderIndex = _orders[poolId][batchId].length;
+        if (orderIndex >= maxOrdersPerBatch) revert BatchFull();
 
         if (orderIndex == 0) {
             uint64 openedAt = uint64(block.timestamp);
@@ -312,7 +361,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// interaction happens next — but a pool that goes quiet has no next interaction, and
     /// its escrowed orders would sit indefinitely. This gives anyone a way to advance the
     /// pool without having to trade to do it.
-    function poke(PoolKey calldata key) external returns (bool rolled) {
+    function poke(PoolKey calldata key) external nonReentrant returns (bool rolled) {
         if (address(key.hooks) != address(this)) revert PoolNotGoverned();
         return _rollIfElapsed(key.toId(), key);
     }
@@ -357,7 +406,16 @@ contract WalrasHook is IHooks, IUnlockCallback {
 
         emit BatchClosed(poolId, batchId, msg.sender, closedAt, _orders[poolId][batchId].length);
 
-        _settleBatch(poolId, batchId, key);
+        // Settlement runs behind an external call purely so its failure is catchable.
+        // Nothing else may trade against this pool, so a batch that could not settle would
+        // strand its escrow and leave the pool permanently unusable. Marking it failed
+        // instead refunds everyone in it and lets the next batch proceed.
+        try this.settleBatch(poolId, batchId, key) {}
+        catch {
+            batch.failed = true;
+            emit BatchSettlementFailed(poolId, batchId);
+        }
+        batch.settled = true;
         return true;
     }
 
@@ -377,14 +435,15 @@ contract WalrasHook is IHooks, IUnlockCallback {
         address beneficiary;
     }
 
-    /// @dev Nets the batch, executes whatever imbalance is left against the pool, and
-    /// reserves the proceeds for claiming — all at one uniform price.
-    function _settleBatch(PoolId poolId, uint256 batchId, PoolKey calldata key) internal {
+    /// @notice Nets a closed batch, executes whatever imbalance is left against the pool,
+    /// and reserves the proceeds for claiming — all at one uniform price.
+    /// @dev External only so the batch roll can catch its failure; it is not callable from
+    /// outside this contract.
+    function settleBatch(PoolId poolId, uint256 batchId, PoolKey calldata key) external {
+        if (msg.sender != address(this)) revert NotSelf();
+
         Order[] storage batchOrders = _orders[poolId][batchId];
-        if (batchOrders.length == 0) {
-            batches[poolId][batchId].settled = true;
-            return;
-        }
+        if (batchOrders.length == 0) return;
 
         (uint160 sqrtPriceCurrentX96,,,) = poolManager.getSlot0(poolId);
         uint128 liquidity = poolManager.getLiquidity(poolId);
@@ -411,8 +470,6 @@ contract WalrasHook is IHooks, IUnlockCallback {
                 })
             )
         );
-
-        batches[poolId][batchId].settled = true;
     }
 
     /// @notice Executes the batch's residual and splits the proceeds.
@@ -563,6 +620,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// @return amount How much was paid.
     function claim(PoolKey calldata key, uint256 batchId, uint256 orderIndex)
         external
+        nonReentrant
         returns (Currency currency, uint256 amount)
     {
         if (address(key.hooks) != address(this)) revert PoolNotGoverned();
@@ -611,9 +669,10 @@ contract WalrasHook is IHooks, IUnlockCallback {
         view
         returns (Currency currency, uint256 amount, bool filled)
     {
+        Batch memory batch = batches[poolId][batchId];
         Settlement memory settlement = settlements[poolId][batchId];
 
-        if (!Netting.isEligible(order, settlement.sqrtPriceX96, batches[poolId][batchId].closedAt)) {
+        if (batch.failed || !Netting.isEligible(order, settlement.sqrtPriceX96, batch.closedAt)) {
             return (order.zeroForOne ? key.currency0 : key.currency1, order.amountIn, false);
         }
 
@@ -641,15 +700,20 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// @notice Takes custody of an order's input amount. Native currency arrives as
     /// `msg.value`; everything else is pulled by `transferFrom`, which requires the caller
     /// to have approved this contract first.
-    /// @dev Fee-on-transfer and rebasing tokens deliver less than `amountIn` and would
-    /// leave the escrow totals overstated. Rejecting them is part of section 8.
+    /// @dev The received amount is measured rather than assumed. A fee-on-transfer or
+    /// rebasing token delivers less than it was asked for, which would leave the escrow
+    /// totals claiming more than the contract holds and make some later claim unpayable.
+    /// Such tokens are refused here rather than discovered at settlement.
     function _pullInput(Currency currency, uint128 amountIn) internal {
         if (currency.isAddressZero()) {
             if (msg.value != amountIn) revert IncorrectNativeValue();
-        } else {
-            if (msg.value != 0) revert UnexpectedNativeValue();
-            ERC20(Currency.unwrap(currency)).safeTransferFrom(msg.sender, address(this), amountIn);
+            return;
         }
+        if (msg.value != 0) revert UnexpectedNativeValue();
+
+        uint256 balanceBefore = currency.balanceOfSelf();
+        ERC20(Currency.unwrap(currency)).safeTransferFrom(msg.sender, address(this), amountIn);
+        if (currency.balanceOfSelf() - balanceBefore != amountIn) revert InexactTransfer();
     }
 
     // --- Hook callbacks ----------------------------------------------------------------

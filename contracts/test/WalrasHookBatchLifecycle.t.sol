@@ -31,6 +31,7 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
 
     uint64 internal constant BATCH_DURATION = 60;
     uint16 internal constant BOUNTY_BIPS = 500;
+    uint16 internal constant MAX_ORDERS = 64;
 
     /// @dev Tests that warp must anchor on a literal rather than caching
     /// `block.timestamp` in a local. Under `via_ir` the optimizer treats TIMESTAMP as
@@ -49,11 +50,11 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
         deployMintAndApprove2Currencies();
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS);
+        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS, MAX_ORDERS);
         (address hookAddress, bytes32 salt) =
             HookMiner.find(address(this), flags, type(WalrasHook).creationCode, constructorArgs);
 
-        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS);
+        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS, MAX_ORDERS);
         require(address(hook) == hookAddress, "hook address mismatch");
 
         (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
@@ -81,15 +82,15 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     }
 
     function _openedAt(uint256 batchId) internal view returns (uint64 openedAt) {
-        (openedAt,,,) = hook.batches(poolId, batchId);
+        (openedAt,,,,) = hook.batches(poolId, batchId);
     }
 
     function _closedAt(uint256 batchId) internal view returns (uint64 closedAt) {
-        (, closedAt,,) = hook.batches(poolId, batchId);
+        (, closedAt,,,) = hook.batches(poolId, batchId);
     }
 
     function _closedBy(uint256 batchId) internal view returns (address closedBy) {
-        (,, closedBy,) = hook.batches(poolId, batchId);
+        (,, closedBy,,) = hook.batches(poolId, batchId);
     }
 
     // --- Window start ------------------------------------------------------------------
@@ -267,7 +268,7 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
         vm.warp(block.timestamp + BATCH_DURATION + 1);
         hook.poke(key);
 
-        (, uint64 closedAt,, bool settled) = hook.batches(poolId, 0);
+        (, uint64 closedAt,, bool settled,) = hook.batches(poolId, 0);
         assertGt(closedAt, 0, "batch not closed");
         assertTrue(settled, "closed batch left unsettled");
     }
@@ -288,7 +289,7 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     /// collapsing batching back into continuous trading.
     function test_RevertsOnZeroBatchDuration() public {
         vm.expectRevert(WalrasHook.ZeroBatchDuration.selector);
-        new WalrasHook(IPoolManager(address(manager)), 0, BOUNTY_BIPS);
+        new WalrasHook(IPoolManager(address(manager)), 0, BOUNTY_BIPS, MAX_ORDERS);
     }
 
     /// @notice Regardless of how orders are spread through a window, they belong to

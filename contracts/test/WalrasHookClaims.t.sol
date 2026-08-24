@@ -31,6 +31,7 @@ contract WalrasHookClaimsTest is Test, Deployers {
 
     uint64 internal constant BATCH_DURATION = 60;
     uint16 internal constant BOUNTY_BIPS = 500;
+    uint16 internal constant MAX_ORDERS = 64;
     uint64 internal constant DEADLINE = 1 days;
 
     function setUp() public {
@@ -38,11 +39,11 @@ contract WalrasHookClaimsTest is Test, Deployers {
         deployMintAndApprove2Currencies();
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS);
+        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS, MAX_ORDERS);
         (address hookAddress, bytes32 salt) =
             HookMiner.find(address(this), flags, type(WalrasHook).creationCode, constructorArgs);
 
-        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS);
+        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS, MAX_ORDERS);
         require(address(hook) == hookAddress, "hook address mismatch");
 
         key = PoolKey(currency0, currency1, 3000, 60, IHooks(address(hook)));

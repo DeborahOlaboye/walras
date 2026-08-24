@@ -29,17 +29,18 @@ contract WalrasHookExclusivityTest is Test, Deployers {
     /// submissions in the same block never trip a roll.
     uint64 internal constant BATCH_DURATION = 60;
     uint16 internal constant BOUNTY_BIPS = 500;
+    uint16 internal constant MAX_ORDERS = 64;
 
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS);
+        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS, MAX_ORDERS);
         (address hookAddress, bytes32 salt) =
             HookMiner.find(address(this), flags, type(WalrasHook).creationCode, constructorArgs);
 
-        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS);
+        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS, MAX_ORDERS);
         require(address(hook) == hookAddress, "hook address mismatch");
 
         (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
