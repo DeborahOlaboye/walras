@@ -111,7 +111,10 @@ contracts/
 │   ├── WalrasHookHardening.t.sol
 │   ├── Netting.t.sol
 │   └── ClearingPrice.t.sol
-├── script/                 — deployment scripts (CREATE2 hook mining)
+├── script/
+│   ├── Deployments.sol       — per-chain v4 addresses and deployment parameters
+│   ├── DeployWalrasHook.s.sol — the hook alone, against an existing PoolManager
+│   └── DeployDemo.s.sol      — tokens, hook, pool and liquidity in one run
 ├── lib/                    — v4-core, v4-periphery, forge-std
 ├── foundry.toml
 └── remappings.txt
@@ -144,10 +147,41 @@ forge build
 forge test -vv
 ```
 
+## Deploying
+
+A v4 hook's address is not incidental — its low bits declare which callbacks the
+PoolManager will invoke. Walras needs `beforeSwap`, so deployment mines a CREATE2 salt
+until it finds an address carrying that flag. The salt is mined against the CREATE2 proxy
+rather than against the sender, because the proxy is what actually performs the
+deployment; mining against the wrong deployer produces an address whose flags say
+something else, and the PoolManager rejects the hook outright.
+
+Stand up a complete demonstrable deployment — two mintable tokens, the hook, a pool it
+governs, and full-range liquidity to trade against:
+
+```shell
+forge script script/DeployDemo.s.sol --rpc-url unichain_sepolia --broadcast --verify
+```
+
+Or deploy just the hook against an existing pool:
+
+```shell
+forge script script/DeployWalrasHook.s.sol --rpc-url unichain_sepolia --broadcast --verify
+```
+
+Drop `--broadcast` to simulate first; the run prints every address a frontend needs.
+Chain-specific addresses and the deployment parameters — batch window, bounty share, order
+cap — live in `script/Deployments.sol`.
+
+The batch window is the most consequential of those parameters. Too short and batches stop
+netting, which removes the entire benefit; too long and waiting for a fill stops being
+tolerable. It is set to 12 seconds on Unichain, whose one-second blocks make that roughly
+a dozen blocks of accumulated flow.
+
 ## Status
 
 All 8 sections complete. 97 tests passing, no compiler warnings.
 
 The contract side is feature-complete: orders escrow, batches open and retire themselves, netting and the clearing price resolve on-chain with no oracle, the residual executes once against the curve, LPs are paid on both netted and residual flow, proceeds are claimable, and a settlement that fails refunds its batch rather than taking the pool down with it.
 
-Remaining work is deployment to Unichain Sepolia and the frontend. See the section breakdown above for what's next.
+Deployment scripts are written and simulate cleanly against Unichain Sepolia. Remaining work is the frontend. See the section breakdown above for what's next.

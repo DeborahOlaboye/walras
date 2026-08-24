@@ -2,10 +2,12 @@
 cache/
 out/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+# Ignores development broadcast logs. A pattern containing a slash is anchored to this
+# file's directory, and the Foundry project lives in contracts/, so these need the leading
+# **/ to match at all. Real broadcast records are kept as deployment provenance; local
+# anvil runs and dry-run simulations are not.
+**/broadcast/*/31337/
+**/broadcast/**/dry-run/
 
 # Docs
 docs/
