@@ -13,6 +13,8 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {ERC20} from "solmate/src/tokens/ERC20.sol";
 import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
 
+import {Order} from "./types/Order.sol";
+
 /// @title WalrasHook
 /// @notice A Uniswap v4 hook that enforces pool-native batch settlement with a uniform
 /// clearing price. No swap may execute against a Walras-governed pool except through this
@@ -61,24 +63,6 @@ contract WalrasHook is IHooks {
     /// @notice Thrown when the hook is deployed with a zero-length batch window, which
     /// would close every batch in the block it opened and defeat batching entirely.
     error ZeroBatchDuration();
-
-    /// @notice A single swap intent held in escrow against a batch.
-    /// @param owner The address that submitted the order and may claim its proceeds.
-    /// @param deadline Unix timestamp after which the order may no longer be filled.
-    /// @param zeroForOne Direction: true sells currency0 for currency1.
-    /// @param sqrtPriceLimitX96 Worst clearing price the owner will accept, in v4's
-    /// `sqrtPriceLimitX96` convention — a lower bound when `zeroForOne`, an upper bound
-    /// otherwise.
-    /// @param amountIn Exact input amount, held in escrow by this contract.
-    /// @dev Occupies three storage slots. Tighter packing is possible only by narrowing
-    /// `amountIn`, which would cap order size, so it is left alone.
-    struct Order {
-        address owner;
-        uint64 deadline;
-        bool zeroForOne;
-        uint160 sqrtPriceLimitX96;
-        uint128 amountIn;
-    }
 
     /// @notice Emitted on every accepted order submission.
     event OrderSubmitted(

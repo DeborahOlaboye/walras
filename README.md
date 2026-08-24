@@ -90,11 +90,18 @@ These are real and unresolved, and are called out here rather than left for some
 ```
 contracts/
 ├── src/
-│   ├── WalrasHook.sol      — beforeSwap exclusivity enforcement, batch/settlement orchestration
+│   ├── WalrasHook.sol      — beforeSwap exclusivity enforcement, escrow, batch lifecycle
+│   ├── libraries/
+│   │   └── Netting.sol     — eligibility, internal matching, residual computation
+│   ├── types/
+│   │   └── Order.sol       — the escrowed swap intent, shared by hook and netting
 │   └── mocks/
 │       └── MockSettler.sol — stands in for the real settlement path in isolated tests
 ├── test/
-│   └── WalrasHookExclusivity.t.sol
+│   ├── WalrasHookExclusivity.t.sol
+│   ├── WalrasHookOrderEscrow.t.sol
+│   ├── WalrasHookBatchLifecycle.t.sol
+│   └── Netting.t.sol
 ├── script/                 — deployment scripts (CREATE2 hook mining)
 ├── lib/                    — v4-core, v4-periphery, forge-std
 ├── foundry.toml
@@ -107,7 +114,7 @@ Contract build is broken into sections, in dependency order:
 1. **Hook shell + exclusivity enforcement** — `beforeSwap` rejects any swap whose caller isn't the authorized settler. Validated first as a standalone spike, since every later section depends on this assumption holding. Done, 3/3 tests passing.
 2. **Order escrow / intent submission** — pulls input tokens into custody, records intents against the current batch. Done, 15/15 tests passing.
 3. **Batch lifecycle management** — a batch's window starts on its first order rather than on the previous batch's close, so an idle pool runs no timer and never accumulates empty batches. The first interaction past the window retires the batch and opens the next; `poke()` lets anyone do this without trading, for pools that go quiet. Whoever triggers the close is recorded, since they are the party section 6 reimburses. Done, 17/17 tests passing.
-4. **Order netting engine** — pure matching logic: pairs opposite-direction orders, computes the residual.
+4. **Order netting engine** — pure matching logic, no pool and no state: which orders are eligible at a candidate price, how much offsets internally, and what imbalance is left over. Netting and pricing are one fixed point — you cannot offset currency0 against currency1 without a price — so this section answers the netting half exactly for a price given to it, and section 5 solves for the price that makes the answer self-consistent. Done, 18/18 tests passing.
 5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. No oracle: `P*` falls out of the residual's own walk along the curve, which makes it a function of the batch and the pool alone.
 6. **Residual settlement and LP donation** — ties (1), (4), and (5) together: executes the net residual against the pool via `PoolManager.swap()` gated by the exclusivity check, settles every order at `P*`, donates both the marginal-vs-average surplus and the netted-volume fee to LPs, and pays the settlement bounty to whoever closed the batch. Closing a batch is O(1) and needs no incentive; settling it is O(n), which is why the bounty lives here rather than with the lifecycle.
 7. **Payouts / claims** — pull-based withdrawal of settled proceeds.
@@ -130,4 +137,4 @@ forge test -vv
 
 ## Status
 
-Sections 1 through 3 of 8 complete. See the section breakdown above for what's next.
+Sections 1 through 4 of 8 complete. 53 tests passing. See the section breakdown above for what's next.

@@ -13,6 +13,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
 import {WalrasHook} from "../src/WalrasHook.sol";
+import {Order} from "../src/types/Order.sol";
 import {MockSettler} from "../src/mocks/MockSettler.sol";
 
 /// @notice Section 2: order escrow and intent submission. These tests establish the
@@ -111,7 +112,7 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
         vm.prank(alice);
         (uint256 batchId, uint256 orderIndex) = hook.submitOrder(key, true, 7 ether, MIN_PRICE_LIMIT, deadline);
 
-        WalrasHook.Order memory order = hook.getOrder(poolId, batchId, orderIndex);
+        Order memory order = hook.getOrder(poolId, batchId, orderIndex);
         assertEq(order.owner, alice, "owner");
         assertEq(order.amountIn, 7 ether, "amountIn");
         assertEq(order.sqrtPriceLimitX96, MIN_PRICE_LIMIT, "limit");
