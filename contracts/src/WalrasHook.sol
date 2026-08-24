@@ -13,7 +13,15 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {ERC20} from "solmate/src/tokens/ERC20.sol";
 import {SafeTransferLib} from "solmate/src/utils/SafeTransferLib.sol";
 
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+
 import {Order} from "./types/Order.sol";
+import {Netting} from "./libraries/Netting.sol";
+import {ClearingPrice} from "./libraries/ClearingPrice.sol";
 
 /// @title WalrasHook
 /// @notice A Uniswap v4 hook that enforces pool-native batch settlement with a uniform
@@ -23,10 +31,12 @@ import {Order} from "./types/Order.sol";
 /// @dev Built in sections. Implemented so far: exclusivity enforcement (section 1) and
 /// order escrow / intent submission (section 2). Batch lifecycle, netting, clearing price,
 /// settlement execution, and claims are built on top in later sections.
-contract WalrasHook is IHooks {
+contract WalrasHook is IHooks, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using SafeTransferLib for ERC20;
+    using StateLibrary for IPoolManager;
+    using BalanceDeltaLibrary for BalanceDelta;
 
     /// @notice Thrown when anything other than the PoolManager calls a hook callback.
     error NotPoolManager();
@@ -64,6 +74,14 @@ contract WalrasHook is IHooks {
     /// would close every batch in the block it opened and defeat batching entirely.
     error ZeroBatchDuration();
 
+    /// @notice Thrown when the settlement bounty would take an unreasonable share of the
+    /// value a settlement produces, which belongs to LPs.
+    error BountyTooLarge();
+
+    /// @dev The bounty exists to cover gas, not to compete with the LP donation for the
+    /// surplus. A tenth of it is generous for that purpose.
+    uint16 internal constant MAX_SETTLEMENT_BOUNTY_BIPS = 1_000;
+
     /// @notice Emitted on every accepted order submission.
     event OrderSubmitted(
         PoolId indexed poolId,
@@ -94,6 +112,18 @@ contract WalrasHook is IHooks {
     /// @notice Emitted when a batch receives its first order and its window starts.
     event BatchOpened(PoolId indexed poolId, uint256 indexed batchId, uint64 openedAt);
 
+    /// @notice Emitted once a batch has been netted, its residual executed, and its
+    /// proceeds reserved for claiming.
+    event BatchSettled(
+        PoolId indexed poolId,
+        uint256 indexed batchId,
+        uint160 clearingSqrtPriceX96,
+        bool residualZeroForOne,
+        uint256 residualAmount,
+        uint256 donatedToLps0,
+        uint256 donatedToLps1
+    );
+
     /// @notice Emitted when an elapsed batch is closed to new orders and handed to
     /// settlement.
     event BatchClosed(
@@ -107,12 +137,12 @@ contract WalrasHook is IHooks {
     /// back into continuous trading and removing the protection the hook exists to give.
     uint64 public immutable batchDuration;
 
-    /// @notice The only address permitted to execute a swap against a Walras-governed
-    /// pool. In production this is the hook's own CREATE2-precomputed address (the
-    /// settlement logic lives in this same contract, from section 6 onward) — passed in
-    /// explicitly rather than hardcoded to `address(this)` so the exclusivity check can be
-    /// unit-tested against a mock settler before the real settlement path exists.
-    address public immutable authorizedSettler;
+    /// @notice Share of the value a settlement produces, in basis points, paid to whoever
+    /// triggered it. Closing a batch is cheap, but settling one costs gas proportional to
+    /// its size, and the caller who happens to arrive first pays all of it on everyone
+    /// else's behalf. The bounty comes out of the surplus settlement itself creates, so it
+    /// is funded by the mechanism rather than charged to traders separately.
+    uint16 public immutable settlementBountyBips;
 
     /// @notice The batch currently accepting orders, per pool. Advanced by the batch
     /// lifecycle in section 3; until then every order lands in batch 0.
@@ -126,16 +156,36 @@ contract WalrasHook is IHooks {
     /// @notice Running total of escrowed currency1 awaiting settlement, per pool and batch.
     mapping(PoolId => mapping(uint256 => uint256)) public escrowedOneForZero;
 
+    /// @notice What a batch settled at, and how much is reserved for its claimants.
+    /// @param sqrtPriceX96 The uniform clearing price `P*` every eligible order settles at.
+    /// @param gross0 Currency0 owed to eligible sellers of currency1 at `P*`, before fees.
+    /// @param payout0 Currency0 actually reserved for them. Below `gross0` only when the
+    /// batch could not cover the full entitlement, in which case claims scale down
+    /// proportionally and the effective price stays uniform across every order.
+    /// @param gross1 Currency1 owed to eligible sellers of currency0 at `P*`, before fees.
+    /// @param payout1 Currency1 actually reserved for them.
+    struct Settlement {
+        uint160 sqrtPriceX96;
+        uint256 gross0;
+        uint256 payout0;
+        uint256 gross1;
+        uint256 payout1;
+    }
+
     /// @notice Lifecycle state per pool and batch.
     mapping(PoolId => mapping(uint256 => Batch)) public batches;
 
+    /// @notice Settlement result per pool and batch, read by claims.
+    mapping(PoolId => mapping(uint256 => Settlement)) public settlements;
+
     mapping(PoolId => mapping(uint256 => Order[])) internal _orders;
 
-    constructor(IPoolManager _poolManager, address _authorizedSettler, uint64 _batchDuration) {
+    constructor(IPoolManager _poolManager, uint64 _batchDuration, uint16 _settlementBountyBips) {
         if (_batchDuration == 0) revert ZeroBatchDuration();
+        if (_settlementBountyBips > MAX_SETTLEMENT_BOUNTY_BIPS) revert BountyTooLarge();
         poolManager = _poolManager;
-        authorizedSettler = _authorizedSettler;
         batchDuration = _batchDuration;
+        settlementBountyBips = _settlementBountyBips;
         Hooks.validateHookPermissions(this, getHookPermissions());
     }
 
@@ -291,11 +341,190 @@ contract WalrasHook is IHooks {
         return true;
     }
 
-    /// @dev Nets the batch, executes the residual, and pays out at the uniform clearing
-    /// price. Implemented in section 6 — until then a closed batch is left unsettled and
-    /// its escrow untouched, which is why `settled` is tracked separately from `closedAt`
-    /// rather than inferred from it.
-    function _settleBatch(PoolId poolId, uint256 batchId, PoolKey calldata key) internal {}
+    // --- Settlement (section 6) --------------------------------------------------------
+
+    /// @dev Everything the unlock callback needs to settle one batch. Assembled outside the
+    /// lock because solving for the price only reads state, and doing it here keeps the
+    /// locked section to the parts that actually move value.
+    struct SettleCallbackData {
+        PoolKey key;
+        PoolId poolId;
+        uint256 batchId;
+        uint160 clearingSqrtPriceX96;
+        uint256 eligible0;
+        uint256 eligible1;
+        Netting.Residual residual;
+        address beneficiary;
+    }
+
+    /// @dev Nets the batch, executes whatever imbalance is left against the pool, and
+    /// reserves the proceeds for claiming — all at one uniform price.
+    function _settleBatch(PoolId poolId, uint256 batchId, PoolKey calldata key) internal {
+        Order[] storage batchOrders = _orders[poolId][batchId];
+        if (batchOrders.length == 0) {
+            batches[poolId][batchId].settled = true;
+            return;
+        }
+
+        (uint160 sqrtPriceCurrentX96,,,) = poolManager.getSlot0(poolId);
+        uint128 liquidity = poolManager.getLiquidity(poolId);
+
+        (uint160 clearingSqrtPriceX96,) = ClearingPrice.solve(batchOrders, liquidity, sqrtPriceCurrentX96);
+        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(batchOrders, clearingSqrtPriceX96);
+
+        poolManager.unlock(
+            abi.encode(
+                SettleCallbackData({
+                    key: key,
+                    poolId: poolId,
+                    batchId: batchId,
+                    clearingSqrtPriceX96: clearingSqrtPriceX96,
+                    eligible0: eligible0,
+                    eligible1: eligible1,
+                    residual: Netting.residual(eligible0, eligible1, clearingSqrtPriceX96),
+                    beneficiary: batches[poolId][batchId].closedBy
+                })
+            )
+        );
+
+        batches[poolId][batchId].settled = true;
+    }
+
+    /// @notice Executes the batch's residual and splits the proceeds.
+    /// @dev The only place this contract swaps, and therefore the only caller `beforeSwap`
+    /// will accept. Runs in four steps: push the residual through the curve, work out what
+    /// the two sides are owed at `P*`, hand the difference to LPs, and reserve the rest for
+    /// claims.
+    function unlockCallback(bytes calldata raw) external override returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        SettleCallbackData memory data = abi.decode(raw, (SettleCallbackData));
+
+        uint256 output = _executeResidual(data);
+
+        // Whatever the residual did not consume stays behind for the matched orders, and
+        // whatever the pool returned joins the currency the other side already brought.
+        uint256 available0 = data.residual.zeroForOne ? data.eligible0 - data.residual.amount : data.eligible0 + output;
+        uint256 available1 = data.residual.zeroForOne ? data.eligible1 + output : data.eligible1 - data.residual.amount;
+
+        // Sellers of currency1 are owed currency0 at `P*`, and vice versa. Volume that
+        // matched internally never consumed pool liquidity and so never paid the pool's
+        // fee; charging it here at the pool's own rate is what makes netted flow pay LPs
+        // despite never touching the curve.
+        uint256 gross0 = Netting.token0For1(data.eligible1, data.clearingSqrtPriceX96);
+        uint256 gross1 = Netting.token1For0(data.eligible0, data.clearingSqrtPriceX96);
+        uint256 owed0 = _lessFee(gross0, data.residual.matchedZeroForOne, data.key.fee);
+        uint256 owed1 = _lessFee(gross1, data.residual.matchedOneForZero, data.key.fee);
+
+        // Never reserve more than the batch actually holds. When the two disagree the
+        // shortfall is spread across every claim on that side, so the effective price stays
+        // uniform even though it lands slightly off the fee-free `P*`.
+        if (owed0 > available0) owed0 = available0;
+        if (owed1 > available1) owed1 = available1;
+
+        (uint256 toLps0, uint256 toLps1) = (available0 - owed0, available1 - owed1);
+
+        // A pool with no in-range liquidity cannot receive a donation. Rather than strand
+        // the value, it goes back to the traders as a better fill.
+        if (poolManager.getLiquidity(data.poolId) == 0) {
+            (owed0, owed1) = (available0, available1);
+            (toLps0, toLps1) = (0, 0);
+        }
+
+        (uint256 bounty0, uint256 bounty1) = _payBounty(data, toLps0, toLps1);
+        (toLps0, toLps1) = (toLps0 - bounty0, toLps1 - bounty1);
+
+        _donate(data.key, toLps0, toLps1);
+
+        settlements[data.poolId][data.batchId] =
+            Settlement({sqrtPriceX96: data.clearingSqrtPriceX96, gross0: gross0, payout0: owed0, gross1: gross1, payout1: owed1});
+
+        emit BatchSettled(
+            data.poolId,
+            data.batchId,
+            data.clearingSqrtPriceX96,
+            data.residual.zeroForOne,
+            data.residual.amount,
+            toLps0,
+            toLps1
+        );
+
+        return "";
+    }
+
+    /// @dev Pushes the batch's imbalance through the curve as a single exact-input swap.
+    /// No price limit is imposed: `P*` was solved from this pool's own liquidity, so the
+    /// curve is expected to stop exactly there, and a limit would only turn a disagreement
+    /// into a partial fill that the accounting above does not model.
+    function _executeResidual(SettleCallbackData memory data) private returns (uint256 output) {
+        if (data.residual.amount == 0) return 0;
+
+        BalanceDelta delta = poolManager.swap(
+            data.key,
+            IPoolManager.SwapParams({
+                zeroForOne: data.residual.zeroForOne,
+                amountSpecified: -int256(data.residual.amount),
+                sqrtPriceLimitX96: data.residual.zeroForOne
+                    ? TickMath.MIN_SQRT_PRICE + 1
+                    : TickMath.MAX_SQRT_PRICE - 1
+            }),
+            ""
+        );
+
+        (Currency paid, Currency received) = data.residual.zeroForOne
+            ? (data.key.currency0, data.key.currency1)
+            : (data.key.currency1, data.key.currency0);
+        (int128 paidDelta, int128 receivedDelta) =
+            data.residual.zeroForOne ? (delta.amount0(), delta.amount1()) : (delta.amount1(), delta.amount0());
+
+        _payPool(paid, uint256(uint128(-paidDelta)));
+        output = uint256(uint128(receivedDelta));
+        poolManager.take(received, address(this), output);
+    }
+
+    /// @dev The fee the matched portion would have paid had it gone through the curve.
+    function _lessFee(uint256 gross, uint256 matched, uint24 feePips) private pure returns (uint256) {
+        uint256 fee = FullMath.mulDiv(matched, feePips, 1_000_000);
+        return gross > fee ? gross - fee : 0;
+    }
+
+    function _payBounty(SettleCallbackData memory data, uint256 toLps0, uint256 toLps1)
+        private
+        returns (uint256 bounty0, uint256 bounty1)
+    {
+        if (settlementBountyBips == 0 || data.beneficiary == address(0)) return (0, 0);
+
+        bounty0 = FullMath.mulDiv(toLps0, settlementBountyBips, 10_000);
+        bounty1 = FullMath.mulDiv(toLps1, settlementBountyBips, 10_000);
+        if (bounty0 != 0) _transferOut(data.key.currency0, data.beneficiary, bounty0);
+        if (bounty1 != 0) _transferOut(data.key.currency1, data.beneficiary, bounty1);
+    }
+
+    /// @dev Hands the surplus to the pool's in-range liquidity providers. This is where an
+    /// arbitrageur's usual price improvement ends up: the pool filled the residual at the
+    /// curve's average price while the trader was charged the marginal price `P*`, and the
+    /// gap between them belongs to the LPs who supplied the liquidity.
+    function _donate(PoolKey memory key, uint256 amount0, uint256 amount1) private {
+        if (amount0 == 0 && amount1 == 0) return;
+        poolManager.donate(key, amount0, amount1, "");
+        if (amount0 != 0) _payPool(key.currency0, amount0);
+        if (amount1 != 0) _payPool(key.currency1, amount1);
+    }
+
+    function _payPool(Currency currency, uint256 amount) private {
+        if (amount == 0) return;
+        if (currency.isAddressZero()) {
+            poolManager.settle{value: amount}();
+        } else {
+            poolManager.sync(currency);
+            IERC20Minimal(Currency.unwrap(currency)).transfer(address(poolManager), amount);
+            poolManager.settle();
+        }
+    }
+
+    function _transferOut(Currency currency, address to, uint256 amount) private {
+        if (amount == 0) return;
+        currency.transfer(to, amount);
+    }
 
     /// @notice Number of orders recorded against a given batch.
     function orderCount(PoolId poolId, uint256 batchId) external view returns (uint256) {
@@ -324,9 +553,9 @@ contract WalrasHook is IHooks {
     // --- Hook callbacks ----------------------------------------------------------------
 
     /// @notice Rejects any swap that did not originate from this contract's own
-    /// settlement path. `sender` is the address that called `PoolManager.swap` directly —
-    /// in Walras, that will only ever be this contract itself once settlement (section 6)
-    /// is wired up. Everything else — routers, aggregators, direct calls — reverts here.
+    /// settlement path. `sender` is the address that called `PoolManager.swap` directly,
+    /// which for a Walras-governed pool is only ever this contract settling a batch.
+    /// Everything else — routers, aggregators, direct calls — reverts here.
     function beforeSwap(address sender, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
         external
         view
@@ -334,7 +563,7 @@ contract WalrasHook is IHooks {
         onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        if (sender != authorizedSettler) revert DirectSwapsDisabled();
+        if (sender != address(this)) revert DirectSwapsDisabled();
         return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 

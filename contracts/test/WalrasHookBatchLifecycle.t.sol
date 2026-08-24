@@ -31,6 +31,7 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     address internal carol = makeAddr("carol");
 
     uint64 internal constant BATCH_DURATION = 60;
+    uint16 internal constant BOUNTY_BIPS = 500;
 
     /// @dev Tests that warp must anchor on a literal rather than caching
     /// `block.timestamp` in a local. Under `via_ir` the optimizer treats TIMESTAMP as
@@ -51,11 +52,11 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
         MockSettler settler = new MockSettler(manager);
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(manager, address(settler), BATCH_DURATION);
+        bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS);
         (address hookAddress, bytes32 salt) =
             HookMiner.find(address(this), flags, type(WalrasHook).creationCode, constructorArgs);
 
-        hook = new WalrasHook{salt: salt}(manager, address(settler), BATCH_DURATION);
+        hook = new WalrasHook{salt: salt}(manager, BATCH_DURATION, BOUNTY_BIPS);
         require(address(hook) == hookAddress, "hook address mismatch");
 
         (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
@@ -260,15 +261,18 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
         assertEq(hook.getOrder(poolId, 0, 1).owner, bob, "order 1 owner");
     }
 
-    /// @notice A closed batch is not a settled batch. Settlement arrives in section 6, and
-    /// until it does the distinction has to survive a roll.
-    function test_ClosedBatchIsNotMarkedSettled() public {
+    /// @notice Closing and settling are one atomic step: the interaction that retires a
+    /// batch also nets it and executes its residual. The two are tracked separately anyway,
+    /// because section 8's circuit breaker needs to recognise a batch that closed but whose
+    /// settlement reverted.
+    function test_ClosingABatchSettlesIt() public {
         _submit(alice, true, 1 ether);
         vm.warp(block.timestamp + BATCH_DURATION + 1);
         hook.poke(key);
 
-        (,,, bool settled) = hook.batches(poolId, 0);
-        assertFalse(settled, "closed batch marked settled");
+        (, uint64 closedAt,, bool settled) = hook.batches(poolId, 0);
+        assertGt(closedAt, 0, "batch not closed");
+        assertTrue(settled, "closed batch left unsettled");
     }
 
     /// @notice Several idle windows in a row must not skip batches: each roll advances by
@@ -287,7 +291,7 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     /// collapsing batching back into continuous trading.
     function test_RevertsOnZeroBatchDuration() public {
         vm.expectRevert(WalrasHook.ZeroBatchDuration.selector);
-        new WalrasHook(IPoolManager(address(manager)), address(0xdead), 0);
+        new WalrasHook(IPoolManager(address(manager)), 0, BOUNTY_BIPS);
     }
 
     /// @notice Regardless of how orders are spread through a window, they belong to
