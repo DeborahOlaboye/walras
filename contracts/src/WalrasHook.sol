@@ -78,6 +78,12 @@ contract WalrasHook is IHooks, IUnlockCallback {
     /// value a settlement produces, which belongs to LPs.
     error BountyTooLarge();
 
+    /// @notice Thrown when proceeds are claimed from a batch that has not settled yet.
+    error BatchNotSettled();
+
+    /// @notice Thrown when an order's proceeds have already been withdrawn.
+    error AlreadyClaimed();
+
     /// @dev The bounty exists to cover gas, not to compete with the LP donation for the
     /// surplus. A tenth of it is generous for that purpose.
     uint16 internal constant MAX_SETTLEMENT_BOUNTY_BIPS = 1_000;
@@ -122,6 +128,17 @@ contract WalrasHook is IHooks, IUnlockCallback {
         uint256 residualAmount,
         uint256 donatedToLps0,
         uint256 donatedToLps1
+    );
+
+    /// @notice Emitted when an order's proceeds are withdrawn.
+    event OrderClaimed(
+        PoolId indexed poolId,
+        uint256 indexed batchId,
+        address indexed owner,
+        uint256 orderIndex,
+        Currency currency,
+        uint256 amount,
+        bool filled
     );
 
     /// @notice Emitted when an elapsed batch is closed to new orders and handed to
@@ -177,6 +194,9 @@ contract WalrasHook is IHooks, IUnlockCallback {
 
     /// @notice Settlement result per pool and batch, read by claims.
     mapping(PoolId => mapping(uint256 => Settlement)) public settlements;
+
+    /// @notice Whether an order's proceeds have been withdrawn, per pool, batch and index.
+    mapping(PoolId => mapping(uint256 => mapping(uint256 => bool))) public claimed;
 
     mapping(PoolId => mapping(uint256 => Order[])) internal _orders;
 
@@ -369,8 +389,13 @@ contract WalrasHook is IHooks, IUnlockCallback {
         (uint160 sqrtPriceCurrentX96,,,) = poolManager.getSlot0(poolId);
         uint128 liquidity = poolManager.getLiquidity(poolId);
 
-        (uint160 clearingSqrtPriceX96,) = ClearingPrice.solve(batchOrders, liquidity, sqrtPriceCurrentX96);
-        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(batchOrders, clearingSqrtPriceX96);
+        // Eligibility is judged as of the moment the batch closed, not the moment any
+        // later call happens to read it. Claims re-derive the same answer from the same
+        // timestamp, so a filled order can never look expired after the fact.
+        uint64 asOf = batches[poolId][batchId].closedAt;
+
+        (uint160 clearingSqrtPriceX96,) = ClearingPrice.solve(batchOrders, liquidity, sqrtPriceCurrentX96, asOf);
+        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(batchOrders, clearingSqrtPriceX96, asOf);
 
         poolManager.unlock(
             abi.encode(
@@ -524,6 +549,83 @@ contract WalrasHook is IHooks, IUnlockCallback {
     function _transferOut(Currency currency, address to, uint256 amount) private {
         if (amount == 0) return;
         currency.transfer(to, amount);
+    }
+
+    // --- Claims (section 7) ------------------------------------------------------------
+
+    /// @notice Withdraws one settled order's proceeds to the address that submitted it.
+    /// @dev Pull-based on purpose. Paying every order out during settlement would make the
+    /// closing caller's gas scale with batch size and give a single failing recipient the
+    /// power to revert the whole settlement. Anyone may call this — the proceeds go to the
+    /// order's owner regardless — so a third party can clear a batch's claims on behalf of
+    /// its traders.
+    /// @return currency The currency paid out.
+    /// @return amount How much was paid.
+    function claim(PoolKey calldata key, uint256 batchId, uint256 orderIndex)
+        external
+        returns (Currency currency, uint256 amount)
+    {
+        if (address(key.hooks) != address(this)) revert PoolNotGoverned();
+        PoolId poolId = key.toId();
+        if (!batches[poolId][batchId].settled) revert BatchNotSettled();
+        if (claimed[poolId][batchId][orderIndex]) revert AlreadyClaimed();
+
+        claimed[poolId][batchId][orderIndex] = true;
+
+        Order memory order = _orders[poolId][batchId][orderIndex];
+        bool filled;
+        (currency, amount, filled) = _proceeds(key, poolId, batchId, order);
+
+        emit OrderClaimed(poolId, batchId, order.owner, orderIndex, currency, amount, filled);
+        _transferOut(currency, order.owner, amount);
+    }
+
+    /// @notice What an order would pay out, without withdrawing it.
+    /// @return currency The currency the order would receive.
+    /// @return amount How much, or zero once already claimed.
+    /// @return filled Whether the order traded, as opposed to being refunded unfilled.
+    function claimable(PoolKey calldata key, uint256 batchId, uint256 orderIndex)
+        external
+        view
+        returns (Currency currency, uint256 amount, bool filled)
+    {
+        PoolId poolId = key.toId();
+        if (!batches[poolId][batchId].settled) return (CurrencyLibrary.ADDRESS_ZERO, 0, false);
+
+        Order memory order = _orders[poolId][batchId][orderIndex];
+        (currency, amount, filled) = _proceeds(key, poolId, batchId, order);
+        if (claimed[poolId][batchId][orderIndex]) amount = 0;
+    }
+
+    /// @dev An order that could not fill at the clearing price — priced out by its own
+    /// limit, or expired before the batch closed — never entered the netting, so its input
+    /// was never spent and comes back whole.
+    ///
+    /// An order that did fill is paid its share of what the batch reserved for its side.
+    /// The share is pro-rata against the side's gross entitlement rather than paid in full,
+    /// because settlement caps reserves at what it actually holds. Scaling every claim by
+    /// the same ratio is what keeps the realised price uniform across the batch when the
+    /// pool's swap fee leaves the side slightly short of the fee-free `P*`.
+    function _proceeds(PoolKey calldata key, PoolId poolId, uint256 batchId, Order memory order)
+        private
+        view
+        returns (Currency currency, uint256 amount, bool filled)
+    {
+        Settlement memory settlement = settlements[poolId][batchId];
+
+        if (!Netting.isEligible(order, settlement.sqrtPriceX96, batches[poolId][batchId].closedAt)) {
+            return (order.zeroForOne ? key.currency0 : key.currency1, order.amountIn, false);
+        }
+
+        if (order.zeroForOne) {
+            uint256 entitlement = Netting.token1For0(order.amountIn, settlement.sqrtPriceX96);
+            amount = settlement.gross1 == 0 ? 0 : FullMath.mulDiv(entitlement, settlement.payout1, settlement.gross1);
+            return (key.currency1, amount, true);
+        }
+
+        uint256 owed = Netting.token0For1(order.amountIn, settlement.sqrtPriceX96);
+        amount = settlement.gross0 == 0 ? 0 : FullMath.mulDiv(owed, settlement.payout0, settlement.gross0);
+        return (key.currency0, amount, true);
     }
 
     /// @notice Number of orders recorded against a given batch.

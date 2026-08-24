@@ -107,6 +107,7 @@ contracts/
 │   ├── WalrasHookOrderEscrow.t.sol
 │   ├── WalrasHookBatchLifecycle.t.sol
 │   ├── WalrasHookSettlement.t.sol
+│   ├── WalrasHookClaims.t.sol
 │   ├── Netting.t.sol
 │   └── ClearingPrice.t.sol
 ├── script/                 — deployment scripts (CREATE2 hook mining)
@@ -124,7 +125,7 @@ Contract build is broken into sections, in dependency order:
 4. **Order netting engine** — pure matching logic, no pool and no state: which orders are eligible at a candidate price, how much offsets internally, and what imbalance is left over. Netting and pricing are one fixed point — you cannot offset currency0 against currency1 without a price — so this section answers the netting half exactly for a price given to it, and section 5 solves for the price that makes the answer self-consistent. Done, 18/18 tests passing.
 5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. Setting batch excess demand equal to what the curve absorbs gives a quadratic in sqrt-price whose positive root is `P*`, so no oracle appears anywhere and no search is needed in the common case. One equation covers both directions, and it self-checks: a batch already balanced at the pool's price returns that price exactly. Limit prices make eligible volume a step function, so the closed form is iterated until the set of orders eligible at the answer is the set the answer was computed from. Done, 13/13 tests passing.
 6. **Residual settlement and LP donation** — ties (1), (4), and (5) together: executes the net residual against the pool via `PoolManager.swap()` gated by the exclusivity check, settles every order at `P*`, donates both the marginal-vs-average surplus and the netted-volume fee to LPs, and pays the settlement bounty out of that same surplus. Closing a batch is O(1) and needs no incentive; settling it is O(n), which is why the bounty lives here rather than with the lifecycle. Reserved payouts are capped at what the batch actually holds, so a shortfall scales every claim on that side equally rather than leaving one unpayable — the effective price stays uniform. Done, 10/10 tests passing.
-7. **Payouts / claims** — pull-based withdrawal of settled proceeds.
+7. **Payouts / claims** — pull-based withdrawal of settled proceeds. Paying every order out during settlement would make the closing caller's gas scale with batch size and let one failing recipient revert the whole settlement, so proceeds are reserved and withdrawn separately. Anyone may call `claim`; the proceeds go to the order's owner regardless. An order that could not fill — priced out by its own limit, or expired before the close — never entered the netting, so its input comes back whole. Eligibility is judged as of the batch's close, never the present: every deadline is in the past by claim time, and judging against `block.timestamp` there would report the whole batch expired. Done, 12/12 tests passing.
 8. **Hardening** — settlement circuit breaker, deadline expiry, zero-residual batches, all-one-direction batches, decimal/token-ordering edge cases, reentrancy.
 
 ## Tech stack
@@ -144,4 +145,4 @@ forge test -vv
 
 ## Status
 
-Sections 1 through 6 of 8 complete. 75 tests passing. Claims (7) and hardening (8) remain. See the section breakdown above for what's next.
+Sections 1 through 7 of 8 complete. 87 tests passing. Hardening (8) remains. See the section breakdown above for what's next.

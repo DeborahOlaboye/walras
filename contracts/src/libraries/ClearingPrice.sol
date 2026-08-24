@@ -131,16 +131,16 @@ library ClearingPrice {
     /// whose eligible set is unchanged by its own answer is self-consistent, and because
     /// the closed form is exact for a fixed set, that answer is the true intersection. The
     /// bisection fallback exists only so termination never depends on that settling.
-    function solve(Order[] storage orders, uint128 liquidity, uint160 sqrtPriceCurrentX96)
+    function solve(Order[] storage orders, uint128 liquidity, uint160 sqrtPriceCurrentX96, uint64 asOf)
         internal
         view
         returns (uint160 sqrtPriceX96, bool leftStartingTick)
     {
-        (uint256 x0, uint256 x1) = Netting.eligibleVolume(orders, sqrtPriceCurrentX96);
+        (uint256 x0, uint256 x1) = Netting.eligibleVolume(orders, sqrtPriceCurrentX96, asOf);
 
         for (uint256 i = 0; i < MAX_ELIGIBILITY_PASSES; i++) {
             uint160 candidate = solveSegment(x0, x1, liquidity, sqrtPriceCurrentX96);
-            (uint256 nextX0, uint256 nextX1) = Netting.eligibleVolume(orders, candidate);
+            (uint256 nextX0, uint256 nextX1) = Netting.eligibleVolume(orders, candidate, asOf);
 
             if (nextX0 == x0 && nextX1 == x1) {
                 return (candidate, _leftStartingTick(candidate, sqrtPriceCurrentX96));
@@ -149,14 +149,14 @@ library ClearingPrice {
             x1 = nextX1;
         }
 
-        sqrtPriceX96 = _bisect(orders, liquidity, sqrtPriceCurrentX96);
+        sqrtPriceX96 = _bisect(orders, liquidity, sqrtPriceCurrentX96, asOf);
         return (sqrtPriceX96, _leftStartingTick(sqrtPriceX96, sqrtPriceCurrentX96));
     }
 
     /// @dev Guaranteed-termination fallback. Excess demand is monotone in price, so
     /// halving the bracket converges on the crossing regardless of how the eligible set
     /// behaves along the way.
-    function _bisect(Order[] storage orders, uint128 liquidity, uint160 sqrtPriceCurrentX96)
+    function _bisect(Order[] storage orders, uint128 liquidity, uint160 sqrtPriceCurrentX96, uint64 asOf)
         private
         view
         returns (uint160)
@@ -167,7 +167,7 @@ library ClearingPrice {
         for (uint256 i = 0; i < BISECTION_PASSES; i++) {
             if (high - low <= 1) break;
             uint160 mid = low + (high - low) / 2;
-            (uint256 x0, uint256 x1) = Netting.eligibleVolume(orders, mid);
+            (uint256 x0, uint256 x1) = Netting.eligibleVolume(orders, mid, asOf);
             if (excessDemand(x0, x1, liquidity, sqrtPriceCurrentX96, mid) < 0) low = mid;
             else high = mid;
         }

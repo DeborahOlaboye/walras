@@ -66,7 +66,7 @@ contract NettingTest is Test {
         _push(false, 3 ether, SQRT_P_1, NEVER);
         _push(true, 2 ether, SQRT_P_1, NEVER);
 
-        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_1);
+        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_1, uint64(block.timestamp));
         assertEq(eligible0, 7 ether, "currency0 side");
         assertEq(eligible1, 3 ether, "currency1 side");
     }
@@ -77,7 +77,7 @@ contract NettingTest is Test {
         _push(true, 1 ether, SQRT_P_1, NEVER);
         _push(false, 1 ether, SQRT_P_1, NEVER);
 
-        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_1);
+        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_1, uint64(block.timestamp));
         assertEq(eligible0, 1 ether, "currency0 side excluded at its limit");
         assertEq(eligible1, 1 ether, "currency1 side excluded at its limit");
     }
@@ -86,10 +86,10 @@ contract NettingTest is Test {
     function test_ZeroForOneExcludedBelowItsLimit() public {
         _push(true, 1 ether, SQRT_P_4, NEVER);
 
-        (uint256 eligible0,) = Netting.eligibleVolume(orders, SQRT_P_1);
+        (uint256 eligible0,) = Netting.eligibleVolume(orders, SQRT_P_1, uint64(block.timestamp));
         assertEq(eligible0, 0, "filled below its floor");
 
-        (uint256 atLimit,) = Netting.eligibleVolume(orders, SQRT_P_4);
+        (uint256 atLimit,) = Netting.eligibleVolume(orders, SQRT_P_4, uint64(block.timestamp));
         assertEq(atLimit, 1 ether, "not filled at its floor");
     }
 
@@ -97,10 +97,10 @@ contract NettingTest is Test {
     function test_OneForZeroExcludedAboveItsLimit() public {
         _push(false, 1 ether, SQRT_P_1, NEVER);
 
-        (, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_4);
+        (, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_4, uint64(block.timestamp));
         assertEq(eligible1, 0, "filled above its ceiling");
 
-        (, uint256 atLimit) = Netting.eligibleVolume(orders, SQRT_P_1);
+        (, uint256 atLimit) = Netting.eligibleVolume(orders, SQRT_P_1, uint64(block.timestamp));
         assertEq(atLimit, 1 ether, "not filled at its ceiling");
     }
 
@@ -109,7 +109,7 @@ contract NettingTest is Test {
         _push(true, 1 ether, SQRT_P_1, uint64(block.timestamp - 1));
         _push(false, 1 ether, SQRT_P_1, uint64(block.timestamp));
 
-        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_1);
+        (uint256 eligible0, uint256 eligible1) = Netting.eligibleVolume(orders, SQRT_P_1, uint64(block.timestamp));
         assertEq(eligible0, 0, "expired order filled");
         assertEq(eligible1, 1 ether, "order expiring this second wrongly dropped");
     }
@@ -120,11 +120,11 @@ contract NettingTest is Test {
         _push(true, 1 ether, SQRT_P_4, NEVER);
         _push(false, 1 ether, SQRT_P_1, NEVER);
 
-        (uint256 low0, uint256 low1) = Netting.eligibleVolume(orders, SQRT_P_1);
+        (uint256 low0, uint256 low1) = Netting.eligibleVolume(orders, SQRT_P_1, uint64(block.timestamp));
         assertEq(low0, 0, "low price: currency0 side in");
         assertEq(low1, 1 ether, "low price: currency1 side out");
 
-        (uint256 high0, uint256 high1) = Netting.eligibleVolume(orders, SQRT_P_4);
+        (uint256 high0, uint256 high1) = Netting.eligibleVolume(orders, SQRT_P_4, uint64(block.timestamp));
         assertEq(high0, 1 ether, "high price: currency0 side out");
         assertEq(high1, 0, "high price: currency1 side in");
     }

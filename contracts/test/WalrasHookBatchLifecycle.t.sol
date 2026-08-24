@@ -13,7 +13,6 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
 import {WalrasHook} from "../src/WalrasHook.sol";
-import {MockSettler} from "../src/mocks/MockSettler.sol";
 
 /// @notice Section 3: batch lifecycle. The claim under test is that Walras needs no
 /// keeper — that a batch retires itself on whatever interaction happens next, and that a
@@ -48,8 +47,6 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
-
-        MockSettler settler = new MockSettler(manager);
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
         bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS);

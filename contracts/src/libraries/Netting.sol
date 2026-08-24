@@ -46,13 +46,16 @@ library Netting {
     }
 
     /// @notice Whether a single order would accept `sqrtPriceX96` as its clearing price.
+    /// @param asOf The moment eligibility is judged against, which is always the instant
+    /// the batch settled — never the present. Claims are made later, by which time every
+    /// deadline has passed; judging against `block.timestamp` there would report the whole
+    /// batch expired and refund orders that had in fact filled.
     /// @dev A seller of currency0 receives more currency1 as the price rises, so its limit
     /// is a floor; a seller of currency1 wants the opposite, so its limit is a ceiling.
     /// This is the same orientation v4 gives `sqrtPriceLimitX96` on a swap, so a limit
-    /// written for one reads correctly against the other. Expired orders are ineligible at
-    /// every price.
-    function isEligible(Order memory order, uint160 sqrtPriceX96) internal view returns (bool) {
-        if (order.deadline < block.timestamp) return false;
+    /// written for one reads correctly against the other.
+    function isEligible(Order memory order, uint160 sqrtPriceX96, uint64 asOf) internal pure returns (bool) {
+        if (order.deadline < asOf) return false;
         return order.zeroForOne
             ? sqrtPriceX96 >= order.sqrtPriceLimitX96
             : sqrtPriceX96 <= order.sqrtPriceLimitX96;
@@ -63,7 +66,7 @@ library Netting {
     /// @dev Eligible volume is a step function of price: raising the price brings sellers
     /// of currency0 in and pushes sellers of currency1 out. Section 5 walks that function
     /// looking for the price at which the two sides balance against pool liquidity.
-    function eligibleVolume(Order[] storage orders, uint160 sqrtPriceX96)
+    function eligibleVolume(Order[] storage orders, uint160 sqrtPriceX96, uint64 asOf)
         internal
         view
         returns (uint256 eligible0, uint256 eligible1)
@@ -71,7 +74,7 @@ library Netting {
         uint256 length = orders.length;
         for (uint256 i = 0; i < length; i++) {
             Order memory order = orders[i];
-            if (!isEligible(order, sqrtPriceX96)) continue;
+            if (!isEligible(order, sqrtPriceX96, asOf)) continue;
             if (order.zeroForOne) eligible0 += order.amountIn;
             else eligible1 += order.amountIn;
         }

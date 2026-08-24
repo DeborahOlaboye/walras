@@ -14,7 +14,6 @@ import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
 import {WalrasHook} from "../src/WalrasHook.sol";
 import {Order} from "../src/types/Order.sol";
-import {MockSettler} from "../src/mocks/MockSettler.sol";
 
 /// @notice Section 2: order escrow and intent submission. These tests establish the
 /// invariant every later section depends on — that for any batch, the tokens this contract
@@ -50,8 +49,6 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
-
-        MockSettler settler = new MockSettler(manager);
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
         bytes memory constructorArgs = abi.encode(manager, BATCH_DURATION, BOUNTY_BIPS);

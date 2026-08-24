@@ -176,7 +176,7 @@ contract ClearingPriceTest is Test {
         _push(true, 5 ether, TickMath.MIN_SQRT_PRICE + 1);
         _push(false, 5 ether, TickMath.MAX_SQRT_PRICE - 1);
 
-        (uint160 solved,) = ClearingPrice.solve(orders, 1 ether, SQRT_P_1);
+        (uint160 solved,) = ClearingPrice.solve(orders, 1 ether, SQRT_P_1, uint64(block.timestamp));
         assertEq(solved, ClearingPrice.solveSegment(5 ether, 5 ether, 1 ether, SQRT_P_1));
     }
 
@@ -197,7 +197,7 @@ contract ClearingPriceTest is Test {
         _push(true, 50 ether, SQRT_P_1);
         _push(false, 1 ether, TickMath.MAX_SQRT_PRICE - 1);
 
-        (uint160 solved,) = ClearingPrice.solve(orders, 1 ether, SQRT_P_1);
+        (uint160 solved,) = ClearingPrice.solve(orders, 1 ether, SQRT_P_1, uint64(block.timestamp));
         uint160 ifItHadFilled = ClearingPrice.solveSegment(50 ether, 1 ether, 1 ether, SQRT_P_1);
 
         assertGt(solved, ifItHadFilled, "priced-out order still dragged the price down with it");
@@ -213,7 +213,7 @@ contract ClearingPriceTest is Test {
         _push(false, 4 ether, SQRT_P_4);
         _push(false, 2 ether, TickMath.MAX_SQRT_PRICE - 1);
 
-        (uint160 solved,) = ClearingPrice.solve(orders, 10 ether, SQRT_P_1);
+        (uint160 solved,) = ClearingPrice.solve(orders, 10 ether, SQRT_P_1, uint64(block.timestamp));
         (uint256 x0, uint256 x1) = _eligibleAt(solved);
 
         assertEq(ClearingPrice.solveSegment(x0, x1, 10 ether, SQRT_P_1), solved, "not a fixed point");
@@ -232,7 +232,7 @@ contract ClearingPriceTest is Test {
     }
 
     function test_EmptyOrderBookClearsAtThePoolPrice() public view {
-        (uint160 solved,) = ClearingPrice.solve(orders, 1 ether, SQRT_P_1);
+        (uint160 solved,) = ClearingPrice.solve(orders, 1 ether, SQRT_P_1, uint64(block.timestamp));
         assertEq(solved, SQRT_P_1);
     }
 }
