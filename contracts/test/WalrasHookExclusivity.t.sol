@@ -24,6 +24,10 @@ contract WalrasHookExclusivityTest is Test, Deployers {
     WalrasHook internal hook;
     MockSettler internal settler;
 
+    /// @dev Short enough to warp past in a test, long enough that ordinary
+    /// submissions in the same block never trip a roll.
+    uint64 internal constant BATCH_DURATION = 60;
+
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
@@ -34,11 +38,11 @@ contract WalrasHookExclusivityTest is Test, Deployers {
         settler = new MockSettler(manager);
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
-        bytes memory constructorArgs = abi.encode(manager, address(settler));
+        bytes memory constructorArgs = abi.encode(manager, address(settler), BATCH_DURATION);
         (address hookAddress, bytes32 salt) =
             HookMiner.find(address(this), flags, type(WalrasHook).creationCode, constructorArgs);
 
-        hook = new WalrasHook{salt: salt}(manager, address(settler));
+        hook = new WalrasHook{salt: salt}(manager, address(settler), BATCH_DURATION);
         require(address(hook) == hookAddress, "hook address mismatch");
 
         (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);

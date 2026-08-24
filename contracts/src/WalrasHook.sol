@@ -58,6 +58,10 @@ contract WalrasHook is IHooks {
     /// would otherwise be silently stranded in the contract.
     error UnexpectedNativeValue();
 
+    /// @notice Thrown when the hook is deployed with a zero-length batch window, which
+    /// would close every batch in the block it opened and defeat batching entirely.
+    error ZeroBatchDuration();
+
     /// @notice A single swap intent held in escrow against a batch.
     /// @param owner The address that submitted the order and may claim its proceeds.
     /// @param deadline Unix timestamp after which the order may no longer be filled.
@@ -88,7 +92,36 @@ contract WalrasHook is IHooks {
         uint64 deadline
     );
 
+    /// @notice Lifecycle state for one batch of one pool.
+    /// @param openedAt When the batch's window began — set by its first order, not by the
+    /// close of the previous batch, so an idle pool runs no timer and never accumulates
+    /// empty batches.
+    /// @param closedAt When the window was observed to have elapsed. Zero while open.
+    /// @param closedBy Whoever triggered the close, and therefore paid to settle the batch.
+    /// Recorded so section 6 can reimburse them out of batch fees.
+    /// @param settled Whether settlement has completed. Set in section 6.
+    struct Batch {
+        uint64 openedAt;
+        uint64 closedAt;
+        address closedBy;
+        bool settled;
+    }
+
+    /// @notice Emitted when a batch receives its first order and its window starts.
+    event BatchOpened(PoolId indexed poolId, uint256 indexed batchId, uint64 openedAt);
+
+    /// @notice Emitted when an elapsed batch is closed to new orders and handed to
+    /// settlement.
+    event BatchClosed(
+        PoolId indexed poolId, uint256 indexed batchId, address indexed closedBy, uint64 closedAt, uint256 orderCount
+    );
+
     IPoolManager public immutable poolManager;
+
+    /// @notice How long a batch accepts orders once its first order arrives. Immutable:
+    /// a mutable window would let it be shortened to a single block, collapsing the batch
+    /// back into continuous trading and removing the protection the hook exists to give.
+    uint64 public immutable batchDuration;
 
     /// @notice The only address permitted to execute a swap against a Walras-governed
     /// pool. In production this is the hook's own CREATE2-precomputed address (the
@@ -109,11 +142,16 @@ contract WalrasHook is IHooks {
     /// @notice Running total of escrowed currency1 awaiting settlement, per pool and batch.
     mapping(PoolId => mapping(uint256 => uint256)) public escrowedOneForZero;
 
+    /// @notice Lifecycle state per pool and batch.
+    mapping(PoolId => mapping(uint256 => Batch)) public batches;
+
     mapping(PoolId => mapping(uint256 => Order[])) internal _orders;
 
-    constructor(IPoolManager _poolManager, address _authorizedSettler) {
+    constructor(IPoolManager _poolManager, address _authorizedSettler, uint64 _batchDuration) {
+        if (_batchDuration == 0) revert ZeroBatchDuration();
         poolManager = _poolManager;
         authorizedSettler = _authorizedSettler;
+        batchDuration = _batchDuration;
         Hooks.validateHookPermissions(this, getHookPermissions());
     }
 
@@ -173,8 +211,20 @@ contract WalrasHook is IHooks {
         }
 
         PoolId poolId = key.toId();
+
+        // Any interaction is an opportunity to retire an elapsed batch. Doing this before
+        // reading the batch id is what keeps the order out of a window that has already
+        // closed — without it, an order submitted late would join a batch it missed.
+        _rollIfElapsed(poolId, key);
+
         batchId = currentBatchId[poolId];
         orderIndex = _orders[poolId][batchId].length;
+
+        if (orderIndex == 0) {
+            uint64 openedAt = uint64(block.timestamp);
+            batches[poolId][batchId].openedAt = openedAt;
+            emit BatchOpened(poolId, batchId, openedAt);
+        }
 
         _orders[poolId][batchId].push(
             Order({
@@ -200,6 +250,68 @@ contract WalrasHook is IHooks {
         // with a transfer callback cannot observe a half-recorded order.
         _pullInput(zeroForOne ? key.currency0 : key.currency1, amountIn);
     }
+
+    // --- Batch lifecycle (section 3) ---------------------------------------------------
+
+    /// @notice Retires the pool's current batch if its window has elapsed, without
+    /// submitting an order. Settlement is self-triggering — it rides along on whatever
+    /// interaction happens next — but a pool that goes quiet has no next interaction, and
+    /// its escrowed orders would sit indefinitely. This gives anyone a way to advance the
+    /// pool without having to trade to do it.
+    function poke(PoolKey calldata key) external returns (bool rolled) {
+        if (address(key.hooks) != address(this)) revert PoolNotGoverned();
+        return _rollIfElapsed(key.toId(), key);
+    }
+
+    /// @notice When the pool's current batch stops accepting orders, or zero if it holds
+    /// no orders yet and so has not started its window.
+    function currentBatchClosesAt(PoolId poolId) external view returns (uint64) {
+        uint64 openedAt = batches[poolId][currentBatchId[poolId]].openedAt;
+        return openedAt == 0 ? 0 : openedAt + batchDuration;
+    }
+
+    /// @notice Whether the pool's current batch has outlived its window and would be
+    /// closed by the next interaction.
+    function isCurrentBatchElapsed(PoolId poolId) external view returns (bool) {
+        return _hasElapsed(batches[poolId][currentBatchId[poolId]]);
+    }
+
+    /// @dev A batch elapses only once it has actually opened. An empty batch has
+    /// `openedAt == 0` and runs no timer, so an idle pool never manufactures empty
+    /// batches for settlement to walk through.
+    function _hasElapsed(Batch storage batch) internal view returns (bool) {
+        return batch.openedAt != 0 && block.timestamp >= batch.openedAt + batchDuration;
+    }
+
+    /// @notice Closes the current batch and opens the next one if the window has elapsed.
+    /// @dev Closing is O(1); the O(n) work is settlement, which section 6 performs inside
+    /// `_settleBatch`. `closedBy` is recorded here so section 6 can reimburse whoever
+    /// absorbed that cost on everyone else's behalf.
+    function _rollIfElapsed(PoolId poolId, PoolKey calldata key) internal returns (bool) {
+        uint256 batchId = currentBatchId[poolId];
+        Batch storage batch = batches[poolId][batchId];
+        if (!_hasElapsed(batch)) return false;
+
+        uint64 closedAt = uint64(block.timestamp);
+        batch.closedAt = closedAt;
+        batch.closedBy = msg.sender;
+
+        // Advance before settling. Settlement swaps against the pool, which re-enters this
+        // contract through `beforeSwap`; leaving the closed batch current during that call
+        // would expose a batch that is mid-settlement as though it were still open.
+        currentBatchId[poolId] = batchId + 1;
+
+        emit BatchClosed(poolId, batchId, msg.sender, closedAt, _orders[poolId][batchId].length);
+
+        _settleBatch(poolId, batchId, key);
+        return true;
+    }
+
+    /// @dev Nets the batch, executes the residual, and pays out at the uniform clearing
+    /// price. Implemented in section 6 — until then a closed batch is left unsettled and
+    /// its escrow untouched, which is why `settled` is tracked separately from `closedAt`
+    /// rather than inferred from it.
+    function _settleBatch(PoolId poolId, uint256 batchId, PoolKey calldata key) internal {}
 
     /// @notice Number of orders recorded against a given batch.
     function orderCount(PoolId poolId, uint256 batchId) external view returns (uint256) {

@@ -106,10 +106,10 @@ Contract build is broken into sections, in dependency order:
 
 1. **Hook shell + exclusivity enforcement** — `beforeSwap` rejects any swap whose caller isn't the authorized settler. Validated first as a standalone spike, since every later section depends on this assumption holding. Done, 3/3 tests passing.
 2. **Order escrow / intent submission** — pulls input tokens into custody, records intents against the current batch. Done, 15/15 tests passing.
-3. **Batch lifecycle management** — tracks window open/close, self-triggers settlement of the prior batch on the next interaction, funds and pays the settlement bounty.
+3. **Batch lifecycle management** — a batch's window starts on its first order rather than on the previous batch's close, so an idle pool runs no timer and never accumulates empty batches. The first interaction past the window retires the batch and opens the next; `poke()` lets anyone do this without trading, for pools that go quiet. Whoever triggers the close is recorded, since they are the party section 6 reimburses. Done, 17/17 tests passing.
 4. **Order netting engine** — pure matching logic: pairs opposite-direction orders, computes the residual.
 5. **Clearing price** — derives `P*` from the intersection of batch orders and the AMM curve. No oracle: `P*` falls out of the residual's own walk along the curve, which makes it a function of the batch and the pool alone.
-6. **Residual settlement and LP donation** — ties (1), (4), and (5) together: executes the net residual against the pool via `PoolManager.swap()` gated by the exclusivity check, settles every order at `P*`, and donates both the marginal-vs-average surplus and the netted-volume fee to LPs.
+6. **Residual settlement and LP donation** — ties (1), (4), and (5) together: executes the net residual against the pool via `PoolManager.swap()` gated by the exclusivity check, settles every order at `P*`, donates both the marginal-vs-average surplus and the netted-volume fee to LPs, and pays the settlement bounty to whoever closed the batch. Closing a batch is O(1) and needs no incentive; settling it is O(n), which is why the bounty lives here rather than with the lifecycle.
 7. **Payouts / claims** — pull-based withdrawal of settled proceeds.
 8. **Hardening** — settlement circuit breaker, deadline expiry, zero-residual batches, all-one-direction batches, decimal/token-ordering edge cases, reentrancy.
 
@@ -130,4 +130,4 @@ forge test -vv
 
 ## Status
 
-Sections 1 and 2 of 8 complete. See the section breakdown above for what's next.
+Sections 1 through 3 of 8 complete. See the section breakdown above for what's next.
