@@ -210,8 +210,9 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
     /// @notice Escrowing against a pool this hook does not govern would trap the tokens:
     /// Walras has no settlement authority there, so nothing could ever fill the order.
     function test_RevertsOnUngovernedPool() public {
-        PoolKey memory foreign =
-            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(0))});
+        PoolKey memory foreign = PoolKey({
+            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(0))
+        });
 
         vm.expectRevert(WalrasHook.PoolNotGoverned.selector);
         vm.prank(alice);

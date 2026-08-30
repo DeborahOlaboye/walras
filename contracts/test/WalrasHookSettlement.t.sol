@@ -70,10 +70,7 @@ contract WalrasHookSettlementTest is Test, Deployers {
         modifyLiquidityRouter.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
-                tickLower: FULL_RANGE_LOWER,
-                tickUpper: FULL_RANGE_UPPER,
-                liquidityDelta: 1e21,
-                salt: 0
+                tickLower: FULL_RANGE_LOWER, tickUpper: FULL_RANGE_UPPER, liquidityDelta: 1e21, salt: 0
             }),
             ""
         );

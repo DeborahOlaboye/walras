@@ -25,6 +25,11 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned deliberately. Unpinned, this installs whatever is newest, and
+          # `forge fmt` has changed its wrapping rules between releases — which turns
+          # an unrelated push into a red build for reasons nobody changed.
+          version: "1.8.1"
 
       - name: Show Forge version
         run: forge --version

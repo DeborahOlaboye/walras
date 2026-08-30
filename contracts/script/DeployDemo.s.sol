@@ -97,10 +97,7 @@ contract DeployDemo is Script {
         liquidityRouter.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams({
-                tickLower: FULL_RANGE_LOWER,
-                tickUpper: FULL_RANGE_UPPER,
-                liquidityDelta: SEED_LIQUIDITY,
-                salt: 0
+                tickLower: FULL_RANGE_LOWER, tickUpper: FULL_RANGE_UPPER, liquidityDelta: SEED_LIQUIDITY, salt: 0
             }),
             ""
         );

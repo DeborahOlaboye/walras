@@ -516,11 +516,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
         _donate(data.key, toLps0, toLps1);
 
         settlements[data.poolId][data.batchId] = Settlement({
-            sqrtPriceX96: data.clearingSqrtPriceX96,
-            gross0: gross0,
-            payout0: owed0,
-            gross1: gross1,
-            payout1: owed1
+            sqrtPriceX96: data.clearingSqrtPriceX96, gross0: gross0, payout0: owed0, gross1: gross1, payout1: owed1
         });
 
         emit BatchSettled(

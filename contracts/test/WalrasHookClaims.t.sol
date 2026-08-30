@@ -232,8 +232,9 @@ contract WalrasHookClaimsTest is Test, Deployers {
     }
 
     function test_RevertsOnUngovernedPool() public {
-        PoolKey memory foreign =
-            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(0))});
+        PoolKey memory foreign = PoolKey({
+            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(0))
+        });
 
         vm.expectRevert(WalrasHook.PoolNotGoverned.selector);
         hook.claim(foreign, 0, 0);
