@@ -9,9 +9,15 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  check:
+  contracts:
     name: Foundry project
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The Foundry project lives in contracts/, not at the repo root. Without this
+        # every forge command runs where there is no foundry.toml, so remappings and
+        # formatter settings are silently ignored and fmt checks against defaults.
+        working-directory: contracts
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,20 +27,40 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Show Forge version
-        run: |
-          forge --version
+        run: forge --version
 
       - name: Run Forge fmt
-        run: |
-          forge fmt --check
+        run: forge fmt --check
         id: fmt
 
       - name: Run Forge build
-        run: |
-          forge build --sizes
+        run: forge build --sizes
         id: build
 
       - name: Run Forge tests
-        run: |
-          forge test -vvv
+        run: forge test -vvv
         id: test
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build

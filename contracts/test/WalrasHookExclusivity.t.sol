@@ -77,11 +77,8 @@ contract WalrasHookExclusivityTest is Test, Deployers {
         MockERC20(Currency.unwrap(currency0)).transfer(address(impostor), 10 ether);
         MockERC20(Currency.unwrap(currency1)).transfer(address(impostor), 10 ether);
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -1e15,
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1e15, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
 
         _expectWrappedDirectSwapsDisabled();
         impostor.executeSwap(key, params);

@@ -95,7 +95,11 @@ contract WalrasHookSettlementTest is Test, Deployers {
     function _submit(address who, bool zeroForOne, uint128 amountIn) internal {
         vm.prank(who);
         hook.submitOrder(
-            key, zeroForOne, amountIn, zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
+            key,
+            zeroForOne,
+            amountIn,
+            zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT,
+            uint64(block.timestamp) + DEADLINE
         );
     }
 

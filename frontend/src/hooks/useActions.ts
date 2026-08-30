@@ -6,8 +6,14 @@ import { maxUint256, type Address } from "viem";
 import { useUi } from "@/components/AppShell";
 import { useWallet } from "./useWallet";
 import { demoTokenAbi, walrasHookAbi } from "@/lib/abi";
-import { friendlyError, publicClient, walletClientFor } from "@/lib/chain";
-import { addresses, poolKey } from "@/lib/config";
+import {
+  ensureChain,
+  friendlyError,
+  getInjected,
+  publicClient,
+  walletClientFor,
+} from "@/lib/chain";
+import { addresses, poolKey, unichainSepolia } from "@/lib/config";
 
 /// Every write the app can make. Each one waits for the receipt before reporting
 /// success, so the UI never claims a batch moved before the chain agrees.
@@ -24,6 +30,19 @@ export function useActions(onDone?: () => void) {
       }
       setPending(label);
       try {
+        // Never sign against whatever chain the wallet happens to be on. These
+        // addresses only exist on Unichain Sepolia, so a write sent elsewhere would
+        // either revert or — worse — hit an unrelated contract at the same address.
+        const provider = getInjected();
+        if (provider) {
+          const current = (await provider.request({
+            method: "eth_chainId",
+          })) as string;
+          if (parseInt(current, 16) !== unichainSepolia.id) {
+            await ensureChain(provider);
+          }
+        }
+
         const hash = await fn(address);
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status === "reverted") {

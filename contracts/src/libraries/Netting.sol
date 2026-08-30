@@ -33,16 +33,12 @@ library Netting {
     /// @dev Applies the sqrt price twice rather than squaring it first, which would
     /// overflow for most of the representable range. Rounds down.
     function token1For0(uint256 amount0, uint160 sqrtPriceX96) internal pure returns (uint256) {
-        return FullMath.mulDiv(
-            FullMath.mulDiv(amount0, sqrtPriceX96, FixedPoint96.Q96), sqrtPriceX96, FixedPoint96.Q96
-        );
+        return FullMath.mulDiv(FullMath.mulDiv(amount0, sqrtPriceX96, FixedPoint96.Q96), sqrtPriceX96, FixedPoint96.Q96);
     }
 
     /// @notice Values an amount of currency1 in currency0 at `sqrtPriceX96`. Rounds down.
     function token0For1(uint256 amount1, uint160 sqrtPriceX96) internal pure returns (uint256) {
-        return FullMath.mulDiv(
-            FullMath.mulDiv(amount1, FixedPoint96.Q96, sqrtPriceX96), FixedPoint96.Q96, sqrtPriceX96
-        );
+        return FullMath.mulDiv(FullMath.mulDiv(amount1, FixedPoint96.Q96, sqrtPriceX96), FixedPoint96.Q96, sqrtPriceX96);
     }
 
     /// @notice Whether a single order would accept `sqrtPriceX96` as its clearing price.
@@ -56,9 +52,7 @@ library Netting {
     /// written for one reads correctly against the other.
     function isEligible(Order memory order, uint160 sqrtPriceX96, uint64 asOf) internal pure returns (bool) {
         if (order.deadline < asOf) return false;
-        return order.zeroForOne
-            ? sqrtPriceX96 >= order.sqrtPriceLimitX96
-            : sqrtPriceX96 <= order.sqrtPriceLimitX96;
+        return order.zeroForOne ? sqrtPriceX96 >= order.sqrtPriceLimitX96 : sqrtPriceX96 <= order.sqrtPriceLimitX96;
     }
 
     /// @notice Sums the input amounts of every order willing to trade at `sqrtPriceX96`,

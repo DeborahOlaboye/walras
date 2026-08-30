@@ -20,7 +20,15 @@ const NAV = [
 export function Header() {
   const { theme, accent, t, setTheme, setAccent } = useUi();
   const path = usePathname();
-  const { address, connect, connecting, hasProvider, wrongChain } = useWallet();
+  const {
+    address,
+    connect,
+    connecting,
+    hasProvider,
+    wrongChain,
+    switchChain,
+    switching,
+  } = useWallet();
 
   return (
     <header
@@ -153,17 +161,23 @@ export function Header() {
           {theme === "dark" ? "LIGHT" : "DARK"}
         </button>
 
-        <div
+        {/* On the wrong chain this is the fix, not a complaint about it — one click
+            switches, adding the network first if the wallet has never seen it. */}
+        <button
+          onClick={wrongChain ? switchChain : undefined}
+          disabled={!wrongChain || switching}
+          title={wrongChain ? "Switch to Unichain Sepolia" : undefined}
           className="mono"
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
             padding: "8px 14px",
-            border: `1px solid ${wrongChain ? t.fg : "var(--line)"}`,
+            border: `1px solid ${wrongChain ? accent : "var(--line)"}`,
             borderRadius: 8,
             fontSize: 11.5,
-            color: wrongChain ? t.fg : t.dim,
+            color: wrongChain ? accent : t.dim,
+            cursor: wrongChain ? "pointer" : "default",
           }}
         >
           <span
@@ -171,11 +185,16 @@ export function Header() {
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: wrongChain ? t.fg : "var(--acc)",
+              background: wrongChain ? accent : "var(--acc)",
+              animation: wrongChain ? "pulseDot 1.6s infinite" : undefined,
             }}
           />
-          {wrongChain ? "WRONG NETWORK" : "Unichain Sepolia"}
-        </div>
+          {switching
+            ? "SWITCHING…"
+            : wrongChain
+              ? "SWITCH TO UNICHAIN SEPOLIA"
+              : "Unichain Sepolia"}
+        </button>
 
         <button
           onClick={address ? undefined : connect}

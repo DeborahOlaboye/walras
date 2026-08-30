@@ -78,7 +78,11 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
     function _submit(address who, bool zeroForOne, uint128 amountIn) internal returns (uint256, uint256) {
         vm.prank(who);
         return hook.submitOrder(
-            key, zeroForOne, amountIn, zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
+            key,
+            zeroForOne,
+            amountIn,
+            zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT,
+            uint64(block.timestamp) + DEADLINE
         );
     }
 
@@ -174,9 +178,7 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
         vm.deal(alice, 10 ether);
 
         vm.prank(alice);
-        hook.submitOrder{value: 4 ether}(
-            nativeKey, true, 4 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
-        );
+        hook.submitOrder{value: 4 ether}(nativeKey, true, 4 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE);
 
         assertEq(address(hook).balance, 4 ether, "native not escrowed");
         assertEq(hook.escrowedZeroForOne(nativeKey.toId(), 0), 4 ether, "native total");
@@ -190,9 +192,7 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
 
         vm.expectRevert(WalrasHook.IncorrectNativeValue.selector);
         vm.prank(alice);
-        hook.submitOrder{value: 3 ether}(
-            nativeKey, true, 4 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
-        );
+        hook.submitOrder{value: 3 ether}(nativeKey, true, 4 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE);
     }
 
     /// @notice Native value attached to an ERC20 order would be stranded in the contract
@@ -210,13 +210,8 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
     /// @notice Escrowing against a pool this hook does not govern would trap the tokens:
     /// Walras has no settlement authority there, so nothing could ever fill the order.
     function test_RevertsOnUngovernedPool() public {
-        PoolKey memory foreign = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(0))
-        });
+        PoolKey memory foreign =
+            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(0))});
 
         vm.expectRevert(WalrasHook.PoolNotGoverned.selector);
         vm.prank(alice);
@@ -238,17 +233,13 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
     function test_RevertsOnLimitPriceAtOrBelowMin() public {
         vm.expectRevert(WalrasHook.InvalidLimitPrice.selector);
         vm.prank(alice);
-        hook.submitOrder(
-            key, true, 1 ether, TickMath.MIN_SQRT_PRICE, uint64(block.timestamp) + DEADLINE
-        );
+        hook.submitOrder(key, true, 1 ether, TickMath.MIN_SQRT_PRICE, uint64(block.timestamp) + DEADLINE);
     }
 
     function test_RevertsOnLimitPriceAtOrAboveMax() public {
         vm.expectRevert(WalrasHook.InvalidLimitPrice.selector);
         vm.prank(alice);
-        hook.submitOrder(
-            key, false, 1 ether, TickMath.MAX_SQRT_PRICE, uint64(block.timestamp) + DEADLINE
-        );
+        hook.submitOrder(key, false, 1 ether, TickMath.MAX_SQRT_PRICE, uint64(block.timestamp) + DEADLINE);
     }
 
     // --- Invariant ---------------------------------------------------------------------
@@ -269,12 +260,8 @@ contract WalrasHookOrderEscrowTest is Test, Deployers {
 
         assertEq(hook.escrowedZeroForOne(poolId, 0), expectedZeroForOne, "zeroForOne total");
         assertEq(hook.escrowedOneForZero(poolId, 0), expectedOneForZero, "oneForZero total");
-        assertEq(
-            MockERC20(Currency.unwrap(currency0)).balanceOf(address(hook)), expectedZeroForOne, "currency0 held"
-        );
-        assertEq(
-            MockERC20(Currency.unwrap(currency1)).balanceOf(address(hook)), expectedOneForZero, "currency1 held"
-        );
+        assertEq(MockERC20(Currency.unwrap(currency0)).balanceOf(address(hook)), expectedZeroForOne, "currency0 held");
+        assertEq(MockERC20(Currency.unwrap(currency1)).balanceOf(address(hook)), expectedOneForZero, "currency1 held");
         assertEq(hook.orderCount(poolId, 0), 8, "count");
     }
 }

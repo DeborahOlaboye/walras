@@ -195,8 +195,7 @@ contract NettingTest is Test {
     function testFuzz_MatchedPlusResidualEqualsEligible(uint128 raw0, uint128 raw1, uint160 rawPrice) public pure {
         uint256 eligible0 = bound(raw0, 0, 1e30);
         uint256 eligible1 = bound(raw1, 0, 1e30);
-        uint160 sqrtPriceX96 =
-            uint160(bound(rawPrice, FixedPoint96.Q96 / 65536, FixedPoint96.Q96 * 65536));
+        uint160 sqrtPriceX96 = uint160(bound(rawPrice, FixedPoint96.Q96 / 65536, FixedPoint96.Q96 * 65536));
 
         Netting.Residual memory r = Netting.residual(eligible0, eligible1, sqrtPriceX96);
 
@@ -214,8 +213,7 @@ contract NettingTest is Test {
     function testFuzz_ResidualDirectionFollowsTheImbalance(uint128 raw0, uint128 raw1, uint160 rawPrice) public pure {
         uint256 eligible0 = bound(raw0, 1, 1e30);
         uint256 eligible1 = bound(raw1, 1, 1e30);
-        uint160 sqrtPriceX96 =
-            uint160(bound(rawPrice, FixedPoint96.Q96 / 65536, FixedPoint96.Q96 * 65536));
+        uint160 sqrtPriceX96 = uint160(bound(rawPrice, FixedPoint96.Q96 / 65536, FixedPoint96.Q96 * 65536));
 
         Netting.Residual memory r = Netting.residual(eligible0, eligible1, sqrtPriceX96);
         uint256 eligible1In0 = Netting.token0For1(eligible1, sqrtPriceX96);
@@ -232,8 +230,7 @@ contract NettingTest is Test {
     function testFuzz_MatchedNeverExceedsEscrow(uint128 raw0, uint128 raw1, uint160 rawPrice) public pure {
         uint256 eligible0 = bound(raw0, 0, 1e30);
         uint256 eligible1 = bound(raw1, 0, 1e30);
-        uint160 sqrtPriceX96 =
-            uint160(bound(rawPrice, FixedPoint96.Q96 / 65536, FixedPoint96.Q96 * 65536));
+        uint160 sqrtPriceX96 = uint160(bound(rawPrice, FixedPoint96.Q96 / 65536, FixedPoint96.Q96 * 65536));
 
         Netting.Residual memory r = Netting.residual(eligible0, eligible1, sqrtPriceX96);
 

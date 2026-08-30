@@ -345,9 +345,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
             escrowedOneForZero[poolId][batchId] += amountIn;
         }
 
-        emit OrderSubmitted(
-            poolId, batchId, msg.sender, orderIndex, zeroForOne, amountIn, sqrtPriceLimitX96, deadline
-        );
+        emit OrderSubmitted(poolId, batchId, msg.sender, orderIndex, zeroForOne, amountIn, sqrtPriceLimitX96, deadline);
 
         // Interaction last: every storage write above is already committed, so a token
         // with a transfer callback cannot observe a half-recorded order.
@@ -517,8 +515,13 @@ contract WalrasHook is IHooks, IUnlockCallback {
 
         _donate(data.key, toLps0, toLps1);
 
-        settlements[data.poolId][data.batchId] =
-            Settlement({sqrtPriceX96: data.clearingSqrtPriceX96, gross0: gross0, payout0: owed0, gross1: gross1, payout1: owed1});
+        settlements[data.poolId][data.batchId] = Settlement({
+            sqrtPriceX96: data.clearingSqrtPriceX96,
+            gross0: gross0,
+            payout0: owed0,
+            gross1: gross1,
+            payout1: owed1
+        });
 
         emit BatchSettled(
             data.poolId,
@@ -545,9 +548,7 @@ contract WalrasHook is IHooks, IUnlockCallback {
             IPoolManager.SwapParams({
                 zeroForOne: data.residual.zeroForOne,
                 amountSpecified: -int256(data.residual.amount),
-                sqrtPriceLimitX96: data.residual.zeroForOne
-                    ? TickMath.MIN_SQRT_PRICE + 1
-                    : TickMath.MAX_SQRT_PRICE - 1
+                sqrtPriceLimitX96: data.residual.zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
             }),
             ""
         );

@@ -107,13 +107,11 @@ library ClearingPrice {
     /// the pool, less what the pool would absorb getting there.
     /// @dev Non-decreasing in `sqrtPriceX96`, which is what guarantees the root is unique
     /// and makes bisection a safe fallback. Negative means the price must rise.
-    function excessDemand(
-        uint256 x0,
-        uint256 x1,
-        uint128 liquidity,
-        uint160 sqrtPriceCurrentX96,
-        uint160 sqrtPriceX96
-    ) internal pure returns (int256) {
+    function excessDemand(uint256 x0, uint256 x1, uint128 liquidity, uint160 sqrtPriceCurrentX96, uint160 sqrtPriceX96)
+        internal
+        pure
+        returns (int256)
+    {
         int256 batchSide = int256(x0) - int256(Netting.token0For1(x1, sqrtPriceX96));
         int256 curveSide = int256(FullMath.mulDiv(liquidity, FixedPoint96.Q96, sqrtPriceX96))
             - int256(FullMath.mulDiv(liquidity, FixedPoint96.Q96, sqrtPriceCurrentX96));

@@ -227,7 +227,9 @@ contract WalrasHookHardeningTest is Test, Deployers {
         vm.startPrank(alice);
         shortfall.approve(address(hook), type(uint256).max);
         vm.expectRevert(WalrasHook.InexactTransfer.selector);
-        hook.submitOrder(shortfallKey, _isCurrency0(address(shortfall)), 1 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE);
+        hook.submitOrder(
+            shortfallKey, _isCurrency0(address(shortfall)), 1 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
+        );
         vm.stopPrank();
     }
 
@@ -244,11 +246,7 @@ contract WalrasHookHardeningTest is Test, Deployers {
         vm.startPrank(alice);
         reentrant.approve(address(hook), type(uint256).max);
         hook.submitOrder(
-            reentrantKey,
-            _isCurrency0(address(reentrant)),
-            1 ether,
-            MIN_PRICE_LIMIT,
-            uint64(block.timestamp) + DEADLINE
+            reentrantKey, _isCurrency0(address(reentrant)), 1 ether, MIN_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
         );
         vm.stopPrank();
 

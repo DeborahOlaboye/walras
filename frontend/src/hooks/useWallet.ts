@@ -10,9 +10,11 @@ export interface WalletState {
   address: Address | null;
   chainId: number | null;
   connecting: boolean;
+  switching: boolean;
   hasProvider: boolean;
   wrongChain: boolean;
   connect: () => Promise<void>;
+  switchChain: () => Promise<void>;
   balance: bigint | null;
 }
 
@@ -20,6 +22,7 @@ export function useWallet(): WalletState {
   const [address, setAddress] = useState<Address | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [hasProvider, setHasProvider] = useState(false);
   const [balance, setBalance] = useState<bigint | null>(null);
 
@@ -93,13 +96,33 @@ export function useWallet(): WalletState {
     }
   }, []);
 
+  /// Offered whenever the wallet is on the wrong chain. `ensureChain` adds the network
+  /// first if the wallet has never seen it, so this is one click even for a wallet
+  /// meeting Unichain Sepolia for the first time.
+  const switchChain = useCallback(async () => {
+    const p = getInjected();
+    if (!p) return;
+    setSwitching(true);
+    try {
+      await ensureChain(p);
+      const id = (await p.request({ method: "eth_chainId" })) as string;
+      setChainId(parseInt(id, 16));
+    } catch {
+      /* the wallet refused; the header keeps offering the switch */
+    } finally {
+      setSwitching(false);
+    }
+  }, []);
+
   return {
     address,
     chainId,
     connecting,
+    switching,
     hasProvider,
     wrongChain: chainId !== null && chainId !== unichainSepolia.id,
     connect,
+    switchChain,
     balance,
   };
 }

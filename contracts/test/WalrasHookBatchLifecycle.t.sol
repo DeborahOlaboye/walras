@@ -77,7 +77,11 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     function _submit(address who, bool zeroForOne, uint128 amountIn) internal returns (uint256 batchId) {
         vm.prank(who);
         (batchId,) = hook.submitOrder(
-            key, zeroForOne, amountIn, zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT, uint64(block.timestamp) + DEADLINE
+            key,
+            zeroForOne,
+            amountIn,
+            zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT,
+            uint64(block.timestamp) + DEADLINE
         );
     }
 
@@ -218,13 +222,8 @@ contract WalrasHookBatchLifecycleTest is Test, Deployers {
     }
 
     function test_PokeRevertsOnUngovernedPool() public {
-        PoolKey memory foreign = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(0))
-        });
+        PoolKey memory foreign =
+            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: IHooks(address(0))});
 
         vm.expectRevert(WalrasHook.PoolNotGoverned.selector);
         hook.poke(foreign);

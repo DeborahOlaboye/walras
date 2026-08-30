@@ -222,9 +222,8 @@ contract ClearingPriceTest is Test {
     function _eligibleAt(uint160 sqrtPriceX96) internal view returns (uint256 x0, uint256 x1) {
         for (uint256 i = 0; i < orders.length; i++) {
             Order memory order = orders[i];
-            bool eligible = order.zeroForOne
-                ? sqrtPriceX96 >= order.sqrtPriceLimitX96
-                : sqrtPriceX96 <= order.sqrtPriceLimitX96;
+            bool eligible =
+                order.zeroForOne ? sqrtPriceX96 >= order.sqrtPriceLimitX96 : sqrtPriceX96 <= order.sqrtPriceLimitX96;
             if (!eligible) continue;
             if (order.zeroForOne) x0 += order.amountIn;
             else x1 += order.amountIn;

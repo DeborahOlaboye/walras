@@ -65,8 +65,7 @@ contract DeployDemo is Script {
         DemoToken tokenB = new DemoToken("Walras Demo B", "WDB");
 
         // v4 requires currency0 < currency1; the tokens land wherever CREATE puts them.
-        (DemoToken token0, DemoToken token1) =
-            address(tokenA) < address(tokenB) ? (tokenA, tokenB) : (tokenB, tokenA);
+        (DemoToken token0, DemoToken token1) = address(tokenA) < address(tokenB) ? (tokenA, tokenB) : (tokenB, tokenA);
 
         WalrasHook hook = new WalrasHook{salt: salt}(
             IPoolManager(manager),
