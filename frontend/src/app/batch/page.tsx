@@ -7,18 +7,58 @@ import { NettingBars } from "@/components/NettingBars";
 import { Panel, StatGrid, StatusPill } from "@/components/Stat";
 import { useActions } from "@/hooks/useActions";
 import { useBatchView } from "@/hooks/useBatchView";
+import { useSettled } from "@/hooks/useSettled";
 import { useWallet } from "@/hooks/useWallet";
 import { SYM0, SYM1 } from "@/lib/config";
-import { f, secondsLeft, shortAddress, sqrtPriceToPrice } from "@/lib/format";
+import { f, fromWei, secondsLeft, shortAddress, sqrtPriceToPrice } from "@/lib/format";
+import { eligibleVolume, nettingSplit, residual } from "@/lib/netting";
 
 export default function BatchScreen() {
   const { t, accent } = useUi();
   const b = useBatchView();
   const { address } = useWallet();
   const { poke, pending } = useActions(b.refresh);
+  const { batches } = useSettled();
+
+  // A window lives twelve seconds; the pool is idle the rest of the time. Rather than
+  // show an empty shell, fall back to the last completed window — clearly marked as
+  // history, never dressed up as live — so the screen always demonstrates the
+  // mechanism instead of a row of zeros.
+  const last = b.phase === "idle" ? batches.find((x) => !x.failed) : undefined;
+  const replay = !!last;
+
+  const lastView = last
+    ? (() => {
+        const { eligible0, eligible1 } = eligibleVolume(
+          last.orders,
+          last.clearingSqrtPriceX96,
+          0n,
+        );
+        const split = nettingSplit(eligible0, eligible1, last.clearingSqrtPriceX96);
+        const res = residual(eligible0, eligible1, last.clearingSqrtPriceX96);
+        return {
+          e0: fromWei(last.orders.filter((o) => o.zeroForOne).reduce((s, o) => s + o.amountIn, 0n)),
+          e1: fromWei(last.orders.filter((o) => !o.zeroForOne).reduce((s, o) => s + o.amountIn, 0n)),
+          n0: last.orders.filter((o) => o.zeroForOne).length,
+          n1: last.orders.filter((o) => !o.zeroForOne).length,
+          netPct: split.netPct,
+          res0Pct: split.res0Pct,
+          res1Pct: split.res1Pct,
+          matched: fromWei(split.matched),
+          residualAmount: fromWei(res.amount),
+          residualZeroForOne: res.zeroForOne,
+          price: sqrtPriceToPrice(last.clearingSqrtPriceX96),
+        };
+      })()
+    : null;
+
+  // Everything below reads from one of the two sources, chosen once here.
+  const view = replay && lastView ? lastView : b;
+  const orders = replay && last ? last.orders : b.orders;
+  const batchLabel = replay && last ? String(last.id) : String(b.currentId);
 
   const cdFg = b.phase === "idle" ? t.faint : b.phase === "open" ? accent : t.fg;
-  const statusFg = cdFg;
+  const statusFg = replay ? t.dim : cdFg;
 
   return (
     <div style={{ padding: "34px 30px 90px", maxWidth: 1500 }}>
@@ -53,12 +93,13 @@ export default function BatchScreen() {
                       letterSpacing: "-0.03em",
                     }}
                   >
-                    Batch #{String(b.currentId)}
+                    Batch #{batchLabel}
                   </div>
                   <StatusPill
-                    label={b.statusLabel}
+                    label={replay ? "LAST WINDOW · SETTLED" : b.statusLabel}
                     fg={statusFg}
                     line={b.phase === "idle" ? t.line : statusFg}
+                    pulse={!replay}
                   />
                 </div>
                 <div
@@ -70,7 +111,9 @@ export default function BatchScreen() {
                     textWrap: "pretty",
                   }}
                 >
-                  {b.statusNote}
+                  {replay
+                    ? "No window is open right now. This is the last one that settled — every order in it filled at the single price below."
+                    : b.statusNote}
                 </div>
               </div>
               <div style={{ textAlign: "right", flex: "none" }}>
@@ -78,27 +121,35 @@ export default function BatchScreen() {
                   className="mono"
                   style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
                 >
-                  {b.phase === "idle"
-                    ? "NO TIMER RUNNING"
-                    : b.phase === "open"
-                      ? "WINDOW CLOSES IN"
-                      : "WINDOW CLOSED"}
+                  {replay
+                    ? "CLEARED AT"
+                    : b.phase === "idle"
+                      ? "NO TIMER RUNNING"
+                      : b.phase === "open"
+                        ? "WINDOW CLOSES IN"
+                        : "WINDOW CLOSED"}
                 </div>
                 <div
                   className="mono"
                   style={{
-                    fontSize: b.phase === "idle" ? 38 : 68,
+                    fontSize: replay ? 44 : b.phase === "idle" ? 38 : 68,
                     lineHeight: 1.05,
-                    color: cdFg,
+                    color: replay ? accent : cdFg,
                   }}
                 >
-                  {b.phase === "idle" ? "IDLE" : secondsLeft(b.remainMs)}
+                  {replay && lastView
+                    ? f(lastView.price, 5)
+                    : b.phase === "idle"
+                      ? "IDLE"
+                      : secondsLeft(b.remainMs)}
                 </div>
                 <div
                   className="mono"
                   style={{ fontSize: 12, color: t.dim, marginTop: 4 }}
                 >
-                  {b.count} / {b.maxOrders} orders
+                  {replay
+                    ? `${orders.length} orders · one price for all of them`
+                    : `${b.count} / ${b.maxOrders} orders`}
                 </div>
               </div>
             </div>
@@ -107,8 +158,8 @@ export default function BatchScreen() {
               <div
                 style={{
                   height: 4,
-                  width: `${b.pct}%`,
-                  background: cdFg,
+                  width: replay ? "100%" : `${b.pct}%`,
+                  background: replay ? t.line : cdFg,
                   transition: "width 0.1s linear",
                 }}
               />
@@ -128,13 +179,13 @@ export default function BatchScreen() {
                   ESCROWED · {SYM0} → {SYM1}
                 </div>
                 <div className="mono" style={{ fontSize: 34, marginTop: 8 }}>
-                  {f(b.e0, 2)}
+                  {f(view.e0, 2)}
                 </div>
                 <div
                   className="mono"
                   style={{ fontSize: 12, color: t.faint, marginTop: 4 }}
                 >
-                  {b.n0} orders · zeroForOne
+                  {view.n0} orders · zeroForOne
                 </div>
               </div>
               <div style={{ padding: "24px 30px", textAlign: "right" }}>
@@ -145,13 +196,13 @@ export default function BatchScreen() {
                   ESCROWED · {SYM1} → {SYM0}
                 </div>
                 <div className="mono" style={{ fontSize: 34, marginTop: 8 }}>
-                  {f(b.e1, 2)}
+                  {f(view.e1, 2)}
                 </div>
                 <div
                   className="mono"
                   style={{ fontSize: 12, color: t.faint, marginTop: 4 }}
                 >
-                  {b.n1} orders · oneForZero
+                  {view.n1} orders · oneForZero
                 </div>
               </div>
             </div>
@@ -171,7 +222,7 @@ export default function BatchScreen() {
               <div
                 style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em" }}
               >
-                Netting, live
+                {replay ? "How that window netted" : "Netting, live"}
               </div>
               <div style={{ fontSize: 14.5, color: t.dim }}>
                 Opposite directions cancel at par. Only the residual touches pool
@@ -181,12 +232,12 @@ export default function BatchScreen() {
 
             <div style={{ marginTop: 26 }}>
               <NettingBars
-                netPct={b.netPct}
-                res0Pct={b.res0Pct}
-                res1Pct={b.res1Pct}
-                matched={b.matched}
-                residualAmount={b.residualAmount}
-                residualZeroForOne={b.residualZeroForOne}
+                netPct={view.netPct}
+                res0Pct={view.res0Pct}
+                res1Pct={view.res1Pct}
+                matched={view.matched}
+                residualAmount={view.residualAmount}
+                residualZeroForOne={view.residualZeroForOne}
               />
             </div>
 
@@ -199,16 +250,19 @@ export default function BatchScreen() {
                   {
                     k: "NETTED / TOTAL FLOW",
                     v:
-                      b.e0 + b.e1 > 0
-                        ? `${f(((b.matched * 2) / Math.max(b.e0 + b.e1, 1e-9)) * 100, 1)}%`
+                      view.e0 + view.e1 > 0
+                        ? `${f(((view.matched * 2) / Math.max(view.e0 + view.e1, 1e-9)) * 100, 1)}%`
                         : "0%",
                     fg: accent,
                   },
                   {
                     k: "RESIDUAL TO CURVE",
-                    v: b.count ? `${f(b.residualAmount, 2)}` : "—",
+                    v: orders.length ? `${f(view.residualAmount, 2)}` : "—",
                   },
-                  { k: "POOL MID NOW", v: b.price ? f(b.price, 5) : "—" },
+                  {
+                    k: replay ? "CLEARED AT P*" : "POOL MID NOW",
+                    v: view.price ? f(view.price, 5) : "—",
+                  },
                 ]}
               />
             </div>
@@ -266,16 +320,16 @@ export default function BatchScreen() {
             }}
           >
             <div style={{ fontSize: 15, fontWeight: 600 }}>
-              Orders in this window
+              {replay ? "Orders in that window" : "Orders in this window"}
             </div>
             <div className="mono" style={{ fontSize: 11, color: t.faint }}>
-              SHARED FATE
+              {replay ? "ALL ONE PRICE" : "SHARED FATE"}
             </div>
           </div>
 
-          {b.orders.length > 0 ? (
+          {orders.length > 0 ? (
             <div style={{ maxHeight: 620, overflowY: "auto" }}>
-              {[...b.orders].reverse().map((o, i) => {
+              {[...orders].reverse().map((o, i) => {
                 const mine =
                   address && o.owner.toLowerCase() === address.toLowerCase();
                 const unbounded =

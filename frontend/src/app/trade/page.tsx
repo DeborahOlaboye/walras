@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useUi } from "@/components/AppShell";
@@ -15,7 +16,10 @@ import {
 } from "@/lib/config";
 import { f, fromWei, priceToSqrtPriceX96, secondsLeft, toWei } from "@/lib/format";
 
-const DEADLINES = [1, 5, 15] as const;
+/// In minutes. The deadline is checked when the batch actually settles, and settlement
+/// waits for whoever next touches the pool — on quiet traffic that can be far longer
+/// than the twelve-second window suggests, so the longest option is the safe default.
+const DEADLINES = [1, 5, 15, 60] as const;
 /// Tolerance from the pool's current price, rather than a raw sqrtPriceX96. Exposing
 /// Q64.96 to a person would be hostile; the contract still receives the encoded bound.
 const LIMITS = [null, 0.05, 0.1, 0.25, 0.5] as const;
@@ -24,11 +28,12 @@ export default function TradeScreen() {
   const { t, accent, flash } = useUi();
   const b = useBatchView();
   const { address } = useWallet();
+  const router = useRouter();
 
   const [dir, setDir] = useState(true); // true = zeroForOne
   const [amount, setAmount] = useState("250");
   const [limPct, setLimPct] = useState<number | null>(null);
-  const [dlMin, setDlMin] = useState<number>(5);
+  const [dlMin, setDlMin] = useState<number>(60);
   const [adv, setAdv] = useState(false);
   const [nonce, setNonce] = useState(0);
 
@@ -82,7 +87,12 @@ export default function TradeScreen() {
     if (needsApprove) return flash(`Approve ${inSym} first`);
     const deadline = BigInt(Math.floor(Date.now() / 1000) + dlMin * 60);
     const hash = await submitOrder(dir, amountWei, sqrtLimit, deadline);
-    if (hash) flash(`${f(Number(amount), 2)} ${inSym} escrowed · you're in the window`);
+    if (!hash) return;
+    flash(`${f(Number(amount), 2)} ${inSym} escrowed · you're in the window`);
+    // The order is in a window that is already counting down, and the window is the
+    // thing worth watching. Staying on this form makes a successful submission look
+    // like nothing happened.
+    router.push("/batch");
   }
 
   const chip = (active: boolean) => ({
@@ -219,7 +229,7 @@ export default function TradeScreen() {
         >
           DEADLINE
         </div>
-        <div style={{ marginTop: 9, display: "flex", gap: 8 }}>
+        <div style={{ marginTop: 9, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {DEADLINES.map((m) => (
             <button
               key={m}
@@ -227,9 +237,22 @@ export default function TradeScreen() {
               className="mono"
               style={chip(dlMin === m)}
             >
-              {m} min
+              {m === 60 ? "1 hour" : `${m} min`}
             </button>
           ))}
+        </div>
+        <div
+          style={{
+            marginTop: 9,
+            fontSize: 12.5,
+            color: t.faint,
+            lineHeight: 1.45,
+            textWrap: "pretty",
+          }}
+        >
+          Checked when the batch settles, not when the window closes. Settlement waits
+          for whoever next touches the pool, so a short deadline can expire before that
+          happens and your input is refunded whole.
         </div>
 
         <div

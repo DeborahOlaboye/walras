@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useUi } from "./AppShell";
+import { useClaimable } from "@/hooks/useClaimable";
 import { useWallet } from "@/hooks/useWallet";
 import { shortAddress } from "@/lib/format";
 import { ACCENTS } from "@/lib/theme";
@@ -29,6 +30,7 @@ export function Header() {
     switchChain,
     switching,
   } = useWallet();
+  const { claimable } = useClaimable(address);
 
   return (
     <header
@@ -89,11 +91,15 @@ export function Header() {
       <nav style={{ display: "flex", flexWrap: "wrap", gap: 4, minWidth: 0 }}>
         {NAV.map(([label, href]) => {
           const active = path === href;
+          const badge = href === "/claims" ? claimable : 0;
           return (
             <Link
               key={href}
               href={href}
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
                 padding: "8px 14px",
                 borderRadius: 8,
                 fontSize: 15,
@@ -102,6 +108,27 @@ export function Header() {
               }}
             >
               {label}
+              {/* Proceeds are pull-based, so nothing arrives on its own. Without a
+                  count here a settled order can sit unclaimed indefinitely. */}
+              {badge > 0 && (
+                <span
+                  className="mono"
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    padding: "0 5px",
+                    borderRadius: 9,
+                    background: accent,
+                    color: "var(--onAcc)",
+                    fontSize: 10.5,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {badge}
+                </span>
+              )}
             </Link>
           );
         })}

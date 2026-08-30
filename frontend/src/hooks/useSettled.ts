@@ -166,8 +166,13 @@ export function useSettled(refreshKey = 0) {
     }
   }, []);
 
+  // Poll rather than load once. The batch screen falls back to the last settled window
+  // when the pool is idle, and without this it keeps showing whichever window was
+  // newest at page load — so a batch that settles while you are watching never appears.
   useEffect(() => {
     load();
+    const iv = setInterval(load, 8000);
+    return () => clearInterval(iv);
   }, [load, refreshKey]);
 
   return { batches, loading, reload: load };
