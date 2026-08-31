@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { BaseError, ContractFunctionRevertedError } from "viem";
 
 import { useUi } from "@/components/AppShell";
 import { Panel } from "@/components/Stat";
@@ -57,6 +58,20 @@ const swapRouterAbi = [
     ],
     outputs: [{ name: "delta", type: "int256" }],
   },
+  // Uniswap v4 catches a reverting hook and re-throws it wrapped, so the reason the
+  // hook actually gave is nested inside this. Without both errors declared here viem
+  // reports only the outer selector and the real cause never surfaces.
+  {
+    type: "error",
+    name: "WrappedError",
+    inputs: [
+      { name: "target", type: "address" },
+      { name: "selector", type: "bytes4" },
+      { name: "reason", type: "bytes" },
+      { name: "details", type: "bytes" },
+    ],
+  },
+  { type: "error", name: "DirectSwapsDisabled", inputs: [] },
 ] as const;
 
 interface LogLine {
@@ -71,6 +86,55 @@ interface LogLine {
 
 const DIRECT_SWAPS_DISABLED = "0x428b5d3a";
 const WRAPPED_ERROR = "0x90bfb865";
+
+/// Works out whether a failed call was refused by the hook, and whether v4 wrapped
+/// that refusal on the way out.
+///
+/// The reason lives in one of three places depending on how far decoding got: the
+/// decoded `WrappedError.reason`, a directly decoded `DirectSwapsDisabled`, or — when
+/// neither decodes — the raw return data. Checking all three keeps a genuine refusal
+/// from being reported as an unexpected failure.
+function readRevert(err: unknown): {
+  refused: boolean;
+  wrapped: boolean;
+  raw: string;
+} {
+  const raw = err instanceof Error ? err.message : String(err);
+
+  if (err instanceof BaseError) {
+    const reverted = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (reverted instanceof ContractFunctionRevertedError) {
+      const name = reverted.data?.errorName;
+
+      if (name === "WrappedError") {
+        const reason = reverted.data?.args?.[2];
+        const hex = typeof reason === "string" ? reason.toLowerCase() : "";
+        return {
+          refused: hex.startsWith(DIRECT_SWAPS_DISABLED),
+          wrapped: true,
+          raw,
+        };
+      }
+      if (name === "DirectSwapsDisabled") {
+        return { refused: true, wrapped: false, raw };
+      }
+      // Undecodable: fall back to looking for either selector in the return data.
+      const data = (reverted.raw ?? "").toLowerCase();
+      return {
+        refused: data.includes(DIRECT_SWAPS_DISABLED.slice(2)),
+        wrapped: data.includes(WRAPPED_ERROR.slice(2)),
+        raw,
+      };
+    }
+  }
+
+  const lowered = raw.toLowerCase();
+  return {
+    refused: lowered.includes(DIRECT_SWAPS_DISABLED.slice(2)),
+    wrapped: lowered.includes(WRAPPED_ERROR.slice(2)),
+    raw,
+  };
+}
 
 export default function ProofScreen() {
   const { t, accent } = useUi();
@@ -134,8 +198,6 @@ export default function ProofScreen() {
       );
       setState("unexpected");
     } catch (err) {
-      const raw = JSON.stringify(err instanceof Error ? err.message : err);
-
       push(
         "The request reached the pool",
         "PoolManager.unlock → PoolManager.swap(poolId, zeroForOne true)",
@@ -145,18 +207,24 @@ export default function ProofScreen() {
         `Walras.beforeSwap(sender ${addresses.swapRouter.slice(0, 10)}…)`,
       );
 
-      if (raw.includes(DIRECT_SWAPS_DISABLED.slice(2))) {
+      // Decode the revert rather than searching the message text. viem prints only
+      // the outermost selector, so the nested reason — the one that actually says
+      // why — never appears in the string.
+      const { refused, wrapped, raw } = readRevert(err);
+
+      if (refused) {
+        if (wrapped) {
+          push(
+            "Uniswap wrapped the refusal before passing it back",
+            `WrappedError · ${WRAPPED_ERROR}`,
+          );
+        }
         push(
           "Refused. The pool will not trade outside a group.",
-          `revert DirectSwapsDisabled() · ${DIRECT_SWAPS_DISABLED}`,
+          `DirectSwapsDisabled() · ${DIRECT_SWAPS_DISABLED}`,
           true,
         );
-        push(
-          "Nothing changed and no tokens moved — there was no way to force a trade",
-          raw.includes(WRAPPED_ERROR.slice(2))
-            ? `wrapped by Uniswap v4 · ${WRAPPED_ERROR}`
-            : undefined,
-        );
+        push("Nothing changed and no tokens moved — the trade was impossible");
         setState("done");
       } else {
         push(
