@@ -60,10 +60,10 @@ export default function ExplorerScreen() {
       >
         <div>
           <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.03em" }}>
-            Settlement receipt
+            What happened in each group
           </div>
           <div style={{ fontSize: 15, color: t.dim, marginTop: 6 }}>
-            One price for the whole window. Verifiable order by order.
+            Every order in a group trades at one price. You can check each one here.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -92,12 +92,12 @@ export default function ExplorerScreen() {
 
       {loading && !d ? (
         <Panel padding={48} style={{ textAlign: "center", color: t.dim }}>
-          Reading settled batches from chain…
+          Loading past groups…
         </Panel>
       ) : !d ? (
         <Panel padding={48} style={{ textAlign: "center", color: t.dim }}>
-          No batch has settled yet. Submit an order, wait out the window, then trigger
-          settlement — the receipt appears here.
+          No group has traded yet. Place an order, wait out the 12 seconds, then close the
+          group — what happened will show up here.
         </Panel>
       ) : (
         <>
@@ -108,41 +108,41 @@ export default function ExplorerScreen() {
             items={
               d.failed
                 ? [
-                    { k: "CLEARING PRICE", v: "VOID", sub: "settlement reverted" },
+                    { k: "PRICE", v: "NONE", sub: "the group failed to trade" },
                     {
                       k: "ORDERS",
                       v: String(d.orders.length),
-                      sub: "all refunded whole",
+                      sub: "everyone got their tokens back",
                     },
-                    { k: "TO LPS", v: "0", sub: "no surplus realised", fg: t.dim },
+                    { k: "TO POOL FUNDERS", v: "0", sub: "nothing was earned", fg: t.dim },
                     {
-                      k: "EVENT",
+                      k: "RESULT",
                       v: "FAILED",
-                      sub: "BatchSettlementFailed",
+                      sub: "nobody traded, nobody lost anything",
                       fg: t.dim,
                     },
                   ]
                 : [
                     {
-                      k: "CLEARING PRICE P*",
+                      k: "PRICE EVERYONE GOT",
                       v: f(price, 5),
-                      sub: `${SYM1} per ${SYM0} · uniform`,
+                      sub: `${SYM1} for every 1 ${SYM0}`,
                       fg: accent,
                     },
                     {
-                      k: "NETTED INTERNALLY",
+                      k: "MATCHED WITH EACH OTHER",
                       v: f(Math.max(matched, 0), 2),
-                      sub: "never touched the curve",
+                      sub: "traded person to person, not with the pool",
                     },
                     {
-                      k: "RESIDUAL TO CURVE",
+                      k: "LEFT OVER FOR THE POOL",
                       v: f(fromWei(d.residualAmount), 2),
-                      sub: `${d.residualZeroForOne ? SYM0 : SYM1} · the only AMM exposure`,
+                      sub: `${d.residualZeroForOne ? SYM0 : SYM1} · the only part the pool handled`,
                     },
                     {
-                      k: "DONATED TO LPS",
+                      k: "KEPT FOR POOL FUNDERS",
                       v: f(fromWei(d.donated0 + d.donated1), 4),
-                      sub: `closed by ${shortAddress(d.closedBy)}`,
+                      sub: `group closed by ${shortAddress(d.closedBy)}`,
                     },
                   ]
             }
@@ -164,11 +164,11 @@ export default function ExplorerScreen() {
                 letterSpacing: "0.05em",
               }}
             >
-              <div>OWNER</div>
-              <div>DIRECTION</div>
-              <div style={{ textAlign: "right" }}>INPUT</div>
-              <div style={{ textAlign: "right" }}>FILLED AT</div>
-              <div style={{ textAlign: "right" }}>OUTCOME</div>
+              <div>WHO</div>
+              <div>WHAT THEY SOLD</div>
+              <div style={{ textAlign: "right" }}>AMOUNT</div>
+              <div style={{ textAlign: "right" }}>PRICE</div>
+              <div style={{ textAlign: "right" }}>RESULT</div>
             </div>
 
             {d.orders.map((o, i) => {
@@ -203,7 +203,7 @@ export default function ExplorerScreen() {
                     {shortAddress(o.owner)}
                   </div>
                   <div style={{ color: o.zeroForOne ? accent : t.bone }}>
-                    {o.zeroForOne ? `${SYM0} → ${SYM1}` : `${SYM1} → ${SYM0}`}
+                    {o.zeroForOne ? `sold ${SYM0}` : `sold ${SYM1}`}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     {f(fromWei(o.amountIn), 2)}
@@ -214,7 +214,7 @@ export default function ExplorerScreen() {
                       color: filled ? t.fg : t.dim,
                     }}
                   >
-                    {d.failed ? "void" : filled ? f(price, 5) : "—"}
+                    {d.failed ? "none" : filled ? f(price, 5) : "—"}
                   </div>
                   <div
                     style={{
@@ -222,7 +222,7 @@ export default function ExplorerScreen() {
                       color: filled ? t.fg : t.dim,
                     }}
                   >
-                    {d.failed ? "refunded" : filled ? "filled" : "refunded"}
+                    {d.failed ? "given back" : filled ? "traded" : "given back"}
                   </div>
                 </div>
               );
@@ -233,8 +233,8 @@ export default function ExplorerScreen() {
               style={{ padding: "14px 20px", fontSize: 11, color: t.faint }}
             >
               {d.failed
-                ? "Settlement reverted — every input returned, no price applied."
-                : `${filledCount} of ${d.orders.length} orders filled, all at ${f(price, 5)}. No ordering advantage exists inside a batch.`}
+                ? "This group failed to trade, so everyone got their tokens back and no price was applied."
+                : `${filledCount} of ${d.orders.length} orders traded, every one of them at ${f(price, 5)}. Being earlier or later in the group made no difference.`}
             </div>
           </Panel>
 
@@ -251,7 +251,7 @@ export default function ExplorerScreen() {
                 className="mono"
                 style={{ fontSize: 11, color: t.faint, letterSpacing: "0.05em" }}
               >
-                WHERE THE SURPLUS WENT
+                WHERE THE EXTRA VALUE WENT
               </div>
               <div
                 style={{
@@ -263,14 +263,14 @@ export default function ExplorerScreen() {
               >
                 {[
                   [
-                    `Donated to pool LPs (${SYM0})`,
+                    `Kept for people who fund the pool (${SYM0})`,
                     f(fromWei(d.donated0), 4),
                   ],
                   [
-                    `Donated to pool LPs (${SYM1})`,
+                    `Kept for people who fund the pool (${SYM1})`,
                     f(fromWei(d.donated1), 4),
                   ],
-                  ["Extractable by searchers", "0"],
+                  ["Taken by bots", "0"],
                 ].map(([k, v]) => (
                   <div
                     key={k}
@@ -299,8 +299,7 @@ export default function ExplorerScreen() {
                   textWrap: "pretty",
                 }}
               >
-                In a continuous pool this spread is a searcher&apos;s profit. Here it
-                goes to LPs, less the bounty that paid for settlement gas.
+                On a normal exchange a bot would pocket this. Here it stays with the people who fund the pool, apart from a small reward to whoever paid the gas to close the group.
               </div>
             </Panel>
 
@@ -309,7 +308,7 @@ export default function ExplorerScreen() {
                 className="mono"
                 style={{ fontSize: 11, color: t.faint, letterSpacing: "0.05em" }}
               >
-                ON-CHAIN
+                RAW DETAILS FROM THE BLOCKCHAIN
               </div>
               <div
                 style={{
@@ -361,7 +360,7 @@ export default function ExplorerScreen() {
                   className="mono"
                   style={{ fontSize: 11, marginTop: 4 }}
                 >
-                  view settlement tx →
+                  view this on the block explorer →
                 </a>
               </div>
             </Panel>

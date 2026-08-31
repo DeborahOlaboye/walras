@@ -93,10 +93,10 @@ export default function BatchScreen() {
                       letterSpacing: "-0.03em",
                     }}
                   >
-                    Batch #{batchLabel}
+                    Group #{batchLabel}
                   </div>
                   <StatusPill
-                    label={replay ? "LAST WINDOW · SETTLED" : b.statusLabel}
+                    label={replay ? "LAST GROUP · ALREADY TRADED" : b.statusLabel}
                     fg={statusFg}
                     line={b.phase === "idle" ? t.line : statusFg}
                     pulse={!replay}
@@ -112,7 +112,7 @@ export default function BatchScreen() {
                   }}
                 >
                   {replay
-                    ? "No window is open right now. This is the last one that settled — every order in it filled at the single price below."
+                    ? "Nothing is being collected right now. This is the last group that traded — every order in it got the one price shown below."
                     : b.statusNote}
                 </div>
               </div>
@@ -122,12 +122,12 @@ export default function BatchScreen() {
                   style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
                 >
                   {replay
-                    ? "CLEARED AT"
+                    ? "THEY ALL TRADED AT"
                     : b.phase === "idle"
-                      ? "NO TIMER RUNNING"
+                      ? "NOTHING COLLECTING YET"
                       : b.phase === "open"
-                        ? "WINDOW CLOSES IN"
-                        : "WINDOW CLOSED"}
+                        ? "TRADES IN"
+                        : "TIME IS UP"}
                 </div>
                 <div
                   className="mono"
@@ -148,8 +148,8 @@ export default function BatchScreen() {
                   style={{ fontSize: 12, color: t.dim, marginTop: 4 }}
                 >
                   {replay
-                    ? `${orders.length} orders · one price for all of them`
-                    : `${b.count} / ${b.maxOrders} orders`}
+                    ? `${orders.length} ${orders.length === 1 ? "order" : "orders"} · all at this one price`
+                    : `${b.count} of ${b.maxOrders} orders so far`}
                 </div>
               </div>
             </div>
@@ -176,7 +176,7 @@ export default function BatchScreen() {
                   className="mono"
                   style={{ fontSize: 11, letterSpacing: "0.06em", color: accent }}
                 >
-                  ESCROWED · {SYM0} → {SYM1}
+                  PEOPLE SELLING {SYM0}
                 </div>
                 <div className="mono" style={{ fontSize: 34, marginTop: 8 }}>
                   {f(view.e0, 2)}
@@ -185,7 +185,8 @@ export default function BatchScreen() {
                   className="mono"
                   style={{ fontSize: 12, color: t.faint, marginTop: 4 }}
                 >
-                  {view.n0} orders · zeroForOne
+                  {view.n0} {view.n0 === 1 ? "order" : "orders"} · held until the group
+                  trades
                 </div>
               </div>
               <div style={{ padding: "24px 30px", textAlign: "right" }}>
@@ -193,7 +194,7 @@ export default function BatchScreen() {
                   className="mono"
                   style={{ fontSize: 11, letterSpacing: "0.06em", color: t.bone }}
                 >
-                  ESCROWED · {SYM1} → {SYM0}
+                  PEOPLE SELLING {SYM1}
                 </div>
                 <div className="mono" style={{ fontSize: 34, marginTop: 8 }}>
                   {f(view.e1, 2)}
@@ -202,7 +203,8 @@ export default function BatchScreen() {
                   className="mono"
                   style={{ fontSize: 12, color: t.faint, marginTop: 4 }}
                 >
-                  {view.n1} orders · oneForZero
+                  {view.n1} {view.n1 === 1 ? "order" : "orders"} · held until the group
+                  trades
                 </div>
               </div>
             </div>
@@ -222,11 +224,11 @@ export default function BatchScreen() {
               <div
                 style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em" }}
               >
-                {replay ? "How that window netted" : "Netting, live"}
+                {replay ? "How those orders matched up" : "Matching, live"}
               </div>
               <div style={{ fontSize: 14.5, color: t.dim }}>
-                Opposite directions cancel at par. Only the residual touches pool
-                liquidity.
+                Buyers and sellers here trade with each other first. Only what is left
+                over goes to the pool.
               </div>
             </div>
 
@@ -248,7 +250,7 @@ export default function BatchScreen() {
                 valueSize={21}
                 items={[
                   {
-                    k: "NETTED / TOTAL FLOW",
+                    k: "MATCHED WITH EACH OTHER",
                     v:
                       view.e0 + view.e1 > 0
                         ? `${f(((view.matched * 2) / Math.max(view.e0 + view.e1, 1e-9)) * 100, 1)}%`
@@ -256,11 +258,11 @@ export default function BatchScreen() {
                     fg: accent,
                   },
                   {
-                    k: "RESIDUAL TO CURVE",
+                    k: "LEFT OVER FOR THE POOL",
                     v: orders.length ? `${f(view.residualAmount, 2)}` : "—",
                   },
                   {
-                    k: replay ? "CLEARED AT P*" : "POOL MID NOW",
+                    k: replay ? "PRICE EVERYONE GOT" : "CURRENT POOL PRICE",
                     v: view.price ? f(view.price, 5) : "—",
                   },
                 ]}
@@ -282,8 +284,9 @@ export default function BatchScreen() {
                 }}
               >
                 <div style={{ fontSize: 14.5, color: t.dim, textWrap: "pretty" }}>
-                  Window elapsed. Settlement is permissionless — trigger it yourself
-                  and take the {b.bountyBips / 100}% bounty on the surplus.
+                  The 12 seconds are up. Anyone can close this group and trade it —
+                  do it yourself and you keep a {b.bountyBips / 100}% reward for
+                  covering the gas.
                 </div>
                 <button
                   onClick={() => poke()}
@@ -323,7 +326,7 @@ export default function BatchScreen() {
               {replay ? "Orders in that window" : "Orders in this window"}
             </div>
             <div className="mono" style={{ fontSize: 11, color: t.faint }}>
-              {replay ? "ALL ONE PRICE" : "SHARED FATE"}
+              {replay ? "ALL GOT THE SAME PRICE" : "ALL GET THE SAME PRICE"}
             </div>
           </div>
 
@@ -372,8 +375,8 @@ export default function BatchScreen() {
                         }}
                       >
                         {o.zeroForOne
-                          ? `zeroForOne · ${SYM0} → ${SYM1}`
-                          : `oneForZero · ${SYM1} → ${SYM0}`}
+                          ? `selling ${SYM0} for ${SYM1}`
+                          : `selling ${SYM1} for ${SYM0}`}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -386,8 +389,8 @@ export default function BatchScreen() {
                         style={{ fontSize: 10.5, color: t.faint, marginTop: 3 }}
                       >
                         {unbounded
-                          ? "unbounded"
-                          : `limit ${f(sqrtPriceToPrice(o.sqrtPriceLimitX96), 4)}`}
+                          ? "accepts any price"
+                          : `min price ${f(sqrtPriceToPrice(o.sqrtPriceLimitX96), 4)}`}
                       </div>
                     </div>
                   </div>
@@ -408,11 +411,12 @@ export default function BatchScreen() {
                 className="mono"
                 style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
               >
-                NO TIMER RUNNING
+                NOTHING COLLECTING YET
               </div>
               <div style={{ fontSize: 15, color: t.dim, textWrap: "pretty" }}>
-                An idle pool runs no clock. The {Number(b.batchDuration)}-second
-                window opens with the first order — yours or anyone&apos;s.
+                There is no countdown until someone places an order. The first order —
+                yours or anyone else&apos;s — starts a {Number(b.batchDuration)}-second
+                timer, and everyone who joins before it runs out trades together.
               </div>
               <Link
                 href="/trade"
@@ -425,7 +429,7 @@ export default function BatchScreen() {
                   fontWeight: 600,
                 }}
               >
-                Open the window
+                Place the first order
               </Link>
             </div>
           )}

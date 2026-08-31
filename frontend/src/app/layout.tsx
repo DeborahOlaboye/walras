@@ -21,7 +21,7 @@ const azeret = Azeret_Mono({
 export const metadata: Metadata = {
   title: "Walras",
   description:
-    "Sealed batch auctions on Uniswap v4. Every order in a window settles at one uniform clearing price, and direct swaps through the pool revert.",
+    "A Uniswap v4 pool that collects orders for 12 seconds and trades them all at one price, so bots cannot jump ahead of you.",
 };
 
 export default function RootLayout({

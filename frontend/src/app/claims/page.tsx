@@ -34,10 +34,10 @@ export default function ClaimsScreen() {
   }
 
   const outcomeOf = (o: MyOrder): { label: string; fg: string } => {
-    if (!o.settled) return { label: "ESCROWED", fg: t.dim };
-    if (o.failed) return { label: "REFUNDED · BATCH FAILED", fg: t.dim };
-    if (o.filled) return { label: "FILLED AT P*", fg: t.fg };
-    return { label: "REFUNDED · UNFILLED", fg: t.dim };
+    if (!o.settled) return { label: "WAITING", fg: t.dim };
+    if (o.failed) return { label: "GIVEN BACK · GROUP FAILED", fg: t.dim };
+    if (o.filled) return { label: "TRADED", fg: t.fg };
+    return { label: "GIVEN BACK · PRICE TOO LOW", fg: t.dim };
   };
 
   return (
@@ -61,10 +61,10 @@ export default function ClaimsScreen() {
       >
         <div>
           <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.03em" }}>
-            My orders
+            Your orders
           </div>
           <div style={{ fontSize: 15, color: t.dim, marginTop: 6 }}>
-            Claims are pull-based, per order. Proceeds always route to the owner.
+            Your tokens are not sent automatically — collect them here. They always go to the wallet that placed the order, whoever presses the button.
           </div>
         </div>
         <button
@@ -79,30 +79,30 @@ export default function ClaimsScreen() {
             fontWeight: 600,
           }}
         >
-          {pending === "Claim" ? "Claiming…" : `Claim all · ${claimableCount}`}
+          {pending === "Claim" ? "Collecting…" : `Collect all · ${claimableCount}`}
         </button>
       </div>
 
       {!address ? (
         <Panel padding={48} style={{ textAlign: "center", color: t.dim }}>
-          Connect a wallet to see orders you have submitted.
+          Connect a wallet to see orders you have placed.
         </Panel>
       ) : loading && groups.length === 0 ? (
         <Panel padding={48} style={{ textAlign: "center", color: t.dim }}>
-          Reading your order history…
+          Looking up your orders…
         </Panel>
       ) : groups.length === 0 ? (
         <Panel padding={48} style={{ textAlign: "center", color: t.dim }}>
-          No orders yet. Submit one and it lands in the next open window.
+          No orders yet. Place one and it joins the next group.
         </Panel>
       ) : (
         groups.map((g) => {
           const price = sqrtPriceToPrice(g.clearingSqrtPriceX96);
           const status = g.failed
-            ? "SETTLEMENT FAILED"
+            ? "GROUP FAILED"
             : g.settled
-              ? "SETTLED"
-              : "OPEN · ESCROWED";
+              ? "TRADED"
+              : "WAITING TO TRADE";
           const stFg = g.failed ? t.fg : g.settled ? accent : t.dim;
 
           return (
@@ -121,7 +121,7 @@ export default function ClaimsScreen() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                   <div style={{ fontSize: 16, fontWeight: 600 }}>
-                    Batch #{String(g.id)}
+                    Group #{String(g.id)}
                   </div>
                   <div
                     className="mono"
@@ -140,9 +140,9 @@ export default function ClaimsScreen() {
                 <div className="mono" style={{ fontSize: 12, color: t.dim }}>
                   {g.settled
                     ? g.failed
-                      ? "reverted · every order refunded whole"
-                      : `P* ${f(price, 5)} · closed by ${shortAddress(g.closedBy)}`
-                    : `${g.orders.length} order${g.orders.length === 1 ? "" : "s"} in window`}
+                      ? "something went wrong · everyone got their tokens back"
+                      : `traded at ${f(price, 5)} · closed by ${shortAddress(g.closedBy)}`
+                    : `${g.orders.length} order${g.orders.length === 1 ? "" : "s"} in this group`}
                 </div>
               </div>
 
@@ -197,7 +197,7 @@ export default function ClaimsScreen() {
                         className="mono"
                         style={{ fontSize: 10.5, color: t.faint, marginTop: 4 }}
                       >
-                        INPUT ESCROWED
+                        YOU SOLD
                       </div>
                     </div>
 
@@ -209,7 +209,7 @@ export default function ClaimsScreen() {
                         className="mono"
                         style={{ fontSize: 10.5, color: t.faint, marginTop: 4 }}
                       >
-                        CLEARING P*
+                        PRICE IT GOT
                       </div>
                     </div>
 
@@ -220,7 +220,7 @@ export default function ClaimsScreen() {
                       >
                         {o.settled
                           ? `${f(fromWei(o.claimable), 4)} ${sym}`
-                          : "escrowed"}
+                          : "waiting"}
                       </div>
                       <div
                         className="mono"
@@ -245,7 +245,7 @@ export default function ClaimsScreen() {
                         letterSpacing: "0.04em",
                       }}
                     >
-                      {o.claimed ? "CLAIMED" : canClaim ? "CLAIM" : "PENDING"}
+                      {o.claimed ? "COLLECTED" : canClaim ? "COLLECT" : "WAITING"}
                     </button>
                   </div>
                 );
@@ -264,18 +264,18 @@ export default function ClaimsScreen() {
       >
         {[
           {
-            t: "FILLED",
-            d: "Received proceeds at the batch clearing price, identical to every other filled order.",
+            t: "TRADED",
+            d: "You got the same price as everyone else in your group.",
             fg: accent,
           },
           {
-            t: "REFUNDED · UNFILLED",
-            d: "Your own limit or deadline excluded you. Input returned whole — never a partial fill.",
+            t: "GIVEN BACK · PRICE TOO LOW",
+            d: "The price was worse than your limit, or your order expired first. You get every token back, never a half-trade.",
             fg: t.bone,
           },
           {
-            t: "REFUNDED · FAILED BATCH",
-            d: "Settlement reverted. The batch pays nobody and refunds everybody.",
+            t: "GIVEN BACK · GROUP FAILED",
+            d: "Something went wrong closing the group, so nobody traded and everybody got their tokens back.",
             fg: t.dim,
           },
         ].map((l) => (

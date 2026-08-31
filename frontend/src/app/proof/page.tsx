@@ -61,7 +61,11 @@ const swapRouterAbi = [
 
 interface LogLine {
   t: string;
+  /// What happened, in words.
   m: string;
+  /// The raw call or error behind it. Shown smaller underneath, because the technical
+  /// detail is the evidence — but it should not be the only thing a reader can see.
+  detail?: string;
   hit?: boolean;
 }
 
@@ -81,17 +85,21 @@ export default function ProofScreen() {
     setState("running");
     const started = performance.now();
     const lines: LogLine[] = [];
-    const push = (m: string, hit = false) => {
+    const push = (m: string, detail?: string, hit = false) => {
       lines.push({
         t: `${((performance.now() - started) / 1000).toFixed(2)}s`,
         m,
+        detail,
         hit,
       });
       setLog([...lines]);
     };
 
-    push(`eth_call → PoolSwapTest.swap(${SYM0} → ${SYM1}, exactIn 1.0)`);
-    push(`router ${addresses.swapRouter}`);
+    push(
+      `Trying to sell 1 ${SYM0} for ${SYM1} the ordinary way, skipping the group`,
+      `PoolSwapTest.swap(${SYM0} → ${SYM1}, exactIn 1.0)`,
+    );
+    push("Using a standard Uniswap router, not anything special", addresses.swapRouter);
 
     try {
       await publicClient.simulateContract({
@@ -119,23 +127,43 @@ export default function ProofScreen() {
 
       // Reaching here would mean the pool accepted a swap outside a batch, which
       // would falsify the entire premise. Say so plainly rather than hiding it.
-      push("swap SUCCEEDED — exclusivity is NOT holding", true);
+      push(
+        "The trade went through. The protection is NOT working.",
+        undefined,
+        true,
+      );
       setState("unexpected");
     } catch (err) {
       const raw = JSON.stringify(err instanceof Error ? err.message : err);
 
-      push(`PoolManager.unlock → PoolManager.swap(poolId, zeroForOne true)`);
-      push(`Walras.beforeSwap(sender ${addresses.swapRouter.slice(0, 10)}…Router)`);
+      push(
+        "The request reached the pool",
+        "PoolManager.unlock → PoolManager.swap(poolId, zeroForOne true)",
+      );
+      push(
+        "Walras checked who was asking, and it was not a group settlement",
+        `Walras.beforeSwap(sender ${addresses.swapRouter.slice(0, 10)}…)`,
+      );
 
       if (raw.includes(DIRECT_SWAPS_DISABLED.slice(2))) {
-        if (raw.includes(WRAPPED_ERROR.slice(2))) {
-          push(`v4 wrapped the hook revert · ${WRAPPED_ERROR}`);
-        }
-        push(`revert DirectSwapsDisabled() · selector ${DIRECT_SWAPS_DISABLED}`, true);
-        push("state unchanged · no fill possible");
+        push(
+          "Refused. The pool will not trade outside a group.",
+          `revert DirectSwapsDisabled() · ${DIRECT_SWAPS_DISABLED}`,
+          true,
+        );
+        push(
+          "Nothing changed and no tokens moved — there was no way to force a trade",
+          raw.includes(WRAPPED_ERROR.slice(2))
+            ? `wrapped by Uniswap v4 · ${WRAPPED_ERROR}`
+            : undefined,
+        );
         setState("done");
       } else {
-        push(`reverted, but not with DirectSwapsDisabled: ${raw.slice(0, 160)}`, true);
+        push(
+          "It was refused, but not for the reason expected — see the raw error",
+          raw.slice(0, 200),
+          true,
+        );
         setState("unexpected");
       }
     }
@@ -155,7 +183,7 @@ export default function ProofScreen() {
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <div>
           <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.03em" }}>
-            Exclusivity proof
+            Proof there is no way around it
           </div>
           <div
             style={{
@@ -166,10 +194,7 @@ export default function ProofScreen() {
               textWrap: "pretty",
             }}
           >
-            The batch is only fair if it is the only way in. This runs a real swap
-            through a standard v4 router against the live pool and shows what the hook
-            does with it. Nothing here is simulated in the browser — the revert comes
-            back from Unichain Sepolia.
+            Grouping orders only protects you if nobody can skip the group. This actually tries to trade against the live pool the ordinary way, and shows you it being refused. This is a real call to the network, not an animation.
           </div>
         </div>
 
@@ -186,7 +211,7 @@ export default function ProofScreen() {
             }}
           >
             <div className="mono" style={{ fontSize: 12, color: t.dim }}>
-              PoolSwapTest · exactInputSingle
+              A REAL CALL TO THE LIVE POOL
             </div>
             <button
               onClick={run}
@@ -202,8 +227,8 @@ export default function ProofScreen() {
               {state === "running"
                 ? "Running…"
                 : state === "idle"
-                  ? "Attempt direct swap"
-                  : "Run again"}
+                  ? "Try to trade the normal way"
+                  : "Try again"}
             </button>
           </div>
 
@@ -218,24 +243,49 @@ export default function ProofScreen() {
           >
             {log.length === 0 ? (
               <div style={{ fontSize: 14, color: t.faint }}>
-                Nothing run yet.
+                Press the button and watch the pool refuse the trade.
               </div>
             ) : (
               log.map((l, i) => (
                 <div
                   key={i}
-                  className="mono"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "66px 1fr",
                     gap: 16,
-                    fontSize: 12,
                     animation: "rowIn 0.25s ease both",
                   }}
                 >
-                  <span style={{ color: t.faint }}>{l.t}</span>
-                  <span style={{ color: l.hit ? accent : t.dim, wordBreak: "break-all" }}>
-                    {l.m}
+                  <span
+                    className="mono"
+                    style={{ fontSize: 12, color: t.faint, paddingTop: 1 }}
+                  >
+                    {l.t}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        color: l.hit ? accent : t.fg,
+                        textWrap: "pretty",
+                      }}
+                    >
+                      {l.m}
+                    </span>
+                    {l.detail && (
+                      <span
+                        className="mono"
+                        style={{
+                          display: "block",
+                          marginTop: 3,
+                          fontSize: 11,
+                          color: t.faint,
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {l.detail}
+                      </span>
+                    )}
                   </span>
                 </div>
               ))
@@ -265,9 +315,7 @@ export default function ProofScreen() {
                   textWrap: "pretty",
                 }}
               >
-                beforeSwap rejected the call. There is no continuous path through this
-                pool — no private orderflow, no priority-gas race, nothing to sandwich.
-                Every fill goes through a sealed window at one price.
+                The pool refused the trade. There is no way to trade here except by joining a group, so there is no queue to jump and nothing for a bot to get in front of. Every trade goes through a group, at one shared price.
               </div>
             </div>
           )}
@@ -284,8 +332,7 @@ export default function ProofScreen() {
                 color: t.dim,
               }}
             >
-              That did not revert the way it should. Read the trace above — this is
-              reported honestly rather than shown as a pass.
+              It was not refused the way it should have been. The details are above — this is shown honestly rather than pretended to be a pass.
             </div>
           )}
         </Panel>
@@ -295,7 +342,7 @@ export default function ProofScreen() {
             className="mono"
             style={{ fontSize: 11, color: t.faint, letterSpacing: "0.05em" }}
           >
-            CONTRACTS INVOLVED
+            THE CONTRACTS INVOLVED
           </div>
           <div
             style={{
@@ -350,36 +397,36 @@ export default function ProofScreen() {
             letterSpacing: "0.05em",
           }}
         >
-          HOOK ERRORS, IN HUMAN
+          WHAT EACH REFUSAL MEANS
         </div>
         {[
           [
             "DirectSwapsDisabled",
-            "This pool has no continuous path. Route through a batch instead.",
+            "You cannot trade here directly. Place an order and join a group instead.",
           ],
           [
             "BatchFull",
-            "64 orders already in this window. The next opens right after settlement.",
+            "This group is full at 64 orders. A new one starts as soon as this one trades.",
           ],
           [
             "OrderExpired",
-            "Your deadline passed before the batch closed. Input refunded whole.",
+            "Your order expired before its group traded, so you got all your tokens back.",
           ],
           [
             "InvalidLimitPrice",
-            "The limit sits outside the range the pool can ever reach.",
+            "The price limit you set is outside anything this pool could reach.",
           ],
           [
             "BatchNotSettled",
-            "Nothing to claim yet — the batch still needs a settlement trigger.",
+            "Nothing to collect yet — this group has not traded.",
           ],
           [
             "AlreadyClaimed",
-            "These proceeds have been pulled. Anyone can claim on an owner's behalf.",
+            "Already collected. Anyone can press collect, but tokens always go to the owner.",
           ],
           [
             "PoolNotGoverned",
-            "That pool isn't attached to this hook, so batching doesn't apply.",
+            "That pool does not use Walras, so none of this applies to it.",
           ],
         ].map(([k, v]) => (
           <div

@@ -47,7 +47,7 @@ export function NettingBars({
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <Row
         cols={cols}
-        label={`${SYM0} → ${SYM1}`}
+        label={`selling ${SYM0}`}
         labelColor={accent}
         total={showTotals ? f(e0 ?? 0, 2) : undefined}
       >
@@ -73,7 +73,7 @@ export function NettingBars({
 
       <Row
         cols={cols}
-        label={`${SYM1} → ${SYM0}`}
+        label={`selling ${SYM1}`}
         labelColor={t.bone}
         total={showTotals ? f(e1 ?? 0, 2) : undefined}
       >
@@ -116,7 +116,7 @@ export function NettingBars({
               transition: "width 0.6s",
             }}
           >
-            CANCELLED INTERNALLY · {f(matched, 1)}
+            MATCHED WITH EACH OTHER · {f(matched, 1)}
           </div>
           <div
             className="mono"
@@ -133,7 +133,7 @@ export function NettingBars({
               transition: "all 0.6s",
             }}
           >
-            RESIDUAL TO CURVE · {f(residualAmount, 1)}{" "}
+            LEFT OVER, GOES TO THE POOL · {f(residualAmount, 1)}{" "}
             {residualZeroForOne ? SYM0 : SYM1}
           </div>
         </div>

@@ -62,14 +62,18 @@ export function useBatchView(): BatchView {
     const res = residual(eligible0, eligible1, sqrtPriceX96);
 
     const statusLabel =
-      phase === "idle" ? "IDLE" : phase === "open" ? "WINDOW OPEN" : "ELAPSED";
+      phase === "idle"
+        ? "WAITING"
+        : phase === "open"
+          ? "COLLECTING ORDERS"
+          : "TIME IS UP";
 
     const statusNote =
       phase === "idle"
-        ? "No batch running. The window opens the moment someone submits."
+        ? "Nothing is being collected right now. The next person to place an order starts a new 12-second group."
         : phase === "open"
-          ? "Every order landing in this window fills at one uniform price. Nothing can be reordered against you inside it."
-          : "The window has closed. Settlement is permissionless — the next interaction with this pool executes it.";
+          ? "Every order placed in these 12 seconds trades at the same price. Nobody in the group can be pushed ahead of or behind you."
+          : "The 12 seconds are up. Anyone can now close this group and trade it — it happens automatically the next time someone uses this pool.";
 
     return {
       ...pool,

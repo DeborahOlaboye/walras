@@ -10,11 +10,31 @@ import { SYM0, SYM1 } from "@/lib/config";
 import { f, secondsLeft, shortAddress } from "@/lib/format";
 
 const STEPS = [
-  ["01", "Submit", "Input is escrowed immediately. No price is known yet, by design."],
-  ["02", "Wait the window", "Twelve seconds shared with everyone else in the batch."],
-  ["03", "Netting", "Opposing orders cancel at par; only the residual reaches the curve."],
-  ["04", "Settle", "One clearing price for the batch. Surplus goes to LPs, not searchers."],
-  ["05", "Claim", "Pull proceeds — or your whole input back if your limit priced you out."],
+  [
+    "01",
+    "You place an order",
+    "Your tokens are held straight away. Nobody knows the price yet — that is the whole point.",
+  ],
+  [
+    "02",
+    "You wait 12 seconds",
+    "Everyone who orders in those 12 seconds is grouped together, including you.",
+  ],
+  [
+    "03",
+    "Opposite orders cancel out",
+    "If someone wants to buy what you are selling, you trade with them directly instead of with the pool.",
+  ],
+  [
+    "04",
+    "Everyone gets one price",
+    "The whole group trades at a single price. There is no first or last, so nobody can jump ahead of you.",
+  ],
+  [
+    "05",
+    "You collect",
+    "Take your tokens. If the price was worse than your limit, you get your original tokens back instead.",
+  ],
 ] as const;
 
 export default function Landing() {
@@ -49,8 +69,8 @@ export default function Landing() {
               color: t.dim,
             }}
           >
-            <span style={{ color: accent }}>UHI10</span> Sealed batch auctions on
-            Uniswap v4
+            <span style={{ color: accent }}>UHI10</span> A Uniswap v4 pool that trades in
+            groups
           </div>
 
           <h1
@@ -63,7 +83,7 @@ export default function Landing() {
               textWrap: "balance",
             }}
           >
-            Nobody trades <span style={{ color: accent }}>first</span> here.
+            Everyone gets the <span style={{ color: accent }}>same price</span>.
           </h1>
 
           <p
@@ -76,10 +96,10 @@ export default function Landing() {
               textWrap: "pretty",
             }}
           >
-            Walras replaces continuous swapping with 12-second sealed windows. Every
-            order in a window settles at one uniform clearing price, offsetting flow
-            cancels before it reaches LP liquidity, and direct swaps through this pool
-            revert. Ordering advantage stops existing.
+            On a normal exchange, bots watch for your trade and jump in front of it to
+            take a cut. Walras stops that by collecting every order for 12 seconds and
+            trading them all at once, at a single price. Nobody goes first, so there is
+            nothing to jump in front of.
           </p>
 
           <div style={{ display: "flex", gap: 12, marginTop: 36, flexWrap: "wrap" }}>
@@ -94,7 +114,7 @@ export default function Landing() {
                 fontSize: 16,
               }}
             >
-              Watch the live batch
+              See it happening
             </Link>
             <Link
               href="/trade"
@@ -107,15 +127,15 @@ export default function Landing() {
                 fontSize: 16,
               }}
             >
-              Submit an order
+              Place an order
             </Link>
           </div>
 
           <div style={{ display: "flex", gap: 40, marginTop: 52, flexWrap: "wrap" }}>
             {[
-              { k: "BATCH WINDOW", v: `${Number(b.batchDuration)}s` },
-              { k: "ORDERS PER BATCH", v: `≤ ${b.maxOrders}` },
-              { k: "SANDWICHABLE SURFACE", v: "0" },
+              { k: "ORDERS ARE GROUPED EVERY", v: `${Number(b.batchDuration)}s` },
+              { k: "ORDERS PER GROUP", v: `up to ${b.maxOrders}` },
+              { k: "WAYS TO JUMP THE QUEUE", v: "0" },
             ].map((s) => (
               <div key={s.k}>
                 <div className="mono" style={{ fontSize: 27 }}>
@@ -168,7 +188,7 @@ export default function Landing() {
                   animation: "pulseDot 1.6s infinite",
                 }}
               />
-              {b.statusLabel} · BATCH #{String(b.currentId)}
+              {b.statusLabel} · GROUP #{String(b.currentId)}
             </div>
             <Link href="/batch" className="mono" style={{ fontSize: 11 }}>
               OPEN →
@@ -189,10 +209,10 @@ export default function Landing() {
                 style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
               >
                 {b.phase === "idle"
-                  ? "NO TIMER RUNNING"
+                  ? "NOTHING COLLECTING YET"
                   : b.phase === "open"
-                    ? "WINDOW CLOSES IN"
-                    : "WINDOW CLOSED"}
+                    ? "THIS GROUP TRADES IN"
+                    : "TIME IS UP"}
               </div>
               <div
                 className="mono"
@@ -202,17 +222,17 @@ export default function Landing() {
                   color: cdFg,
                 }}
               >
-                {b.phase === "idle" ? "IDLE" : secondsLeft(b.remainMs)}
+                {b.phase === "idle" ? "WAITING" : secondsLeft(b.remainMs)}
               </div>
               <div
                 className="mono"
                 style={{ fontSize: 11, color: t.faint, marginTop: 4 }}
               >
                 {b.phase === "idle"
-                  ? "opens with the first order"
+                  ? "starts with the first order"
                   : b.phase === "open"
-                    ? "uniform price for everyone inside"
-                    : "awaiting settlement trigger"}
+                    ? "one price for everyone in it"
+                    : "waiting for someone to close it"}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
@@ -220,7 +240,7 @@ export default function Landing() {
                 className="mono"
                 style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
               >
-                ORDERS
+                ORDERS SO FAR
               </div>
               <div className="mono" style={{ fontSize: 30 }}>
                 {b.count}
@@ -267,7 +287,7 @@ export default function Landing() {
                   borderTop: `1px solid ${t.panel2}`,
                 }}
               >
-                No orders in this window yet.
+                Nobody has placed an order yet.
               </div>
             ) : (
               [...b.orders]
@@ -333,7 +353,7 @@ export default function Landing() {
                   fontWeight: 600,
                 }}
               >
-                Most flow never reaches the curve.
+                Most trades never touch the pool.
               </h2>
             </div>
             <p
@@ -346,9 +366,10 @@ export default function Landing() {
                 textWrap: "pretty",
               }}
             >
-              Opposite directions inside a window cancel each other at par. Only the
-              unmatched residual is swapped against pool liquidity — so there is barely
-              any price impact left to trade ahead of.
+              If you are selling WDA and someone else in the same 12 seconds is buying
+              it, the two of you simply trade with each other. Only whatever is left
+              over after that goes to the pool. Small trades move the price less, and a
+              price that barely moves is not worth attacking.
             </p>
           </div>
 
@@ -372,7 +393,7 @@ export default function Landing() {
               columns={4}
               items={[
                 {
-                  k: "FLOW NETTED THIS WINDOW",
+                  k: "MATCHED WITH EACH OTHER",
                   v:
                     b.e0 + b.e1 > 0
                       ? `${f(((b.matched * 2) / Math.max(b.e0 + b.e1, 1e-9)) * 100, 1)}%`
@@ -380,11 +401,11 @@ export default function Landing() {
                   fg: accent,
                 },
                 {
-                  k: "POOL MID",
+                  k: "CURRENT POOL PRICE",
                   v: b.price ? f(b.price, 5) : "—",
                 },
-                { k: "ORDERS IN WINDOW", v: String(b.count) },
-                { k: "SURPLUS TO LPS, NOT BOTS", v: "100%" },
+                { k: "ORDERS RIGHT NOW", v: String(b.count) },
+                { k: "EXTRA VALUE KEPT FROM BOTS", v: "100%" },
               ]}
             />
           </div>
@@ -458,7 +479,7 @@ export default function Landing() {
                 fontWeight: 600,
               }}
             >
-              There is no side door.
+              There is no way around it.
             </h2>
             <p
               style={{
@@ -470,12 +491,11 @@ export default function Landing() {
                 textWrap: "pretty",
               }}
             >
-              Try to route a normal swap through this pool and{" "}
+              Try to trade through this pool the normal way and it is{" "}
               <span className="mono" style={{ fontSize: 14, color: accent }}>
                 beforeSwap
               </span>{" "}
-              reverts it. Not a setting, not opt-in protection — the pool has no
-              continuous execution path at all.
+              refused. This is not a setting anyone can switch off — the pool simply has no way to trade outside a group.
             </p>
           </div>
           <Link
@@ -489,7 +509,7 @@ export default function Landing() {
               whiteSpace: "nowrap",
             }}
           >
-            See it revert →
+            Watch it get refused →
           </Link>
         </Panel>
       </section>

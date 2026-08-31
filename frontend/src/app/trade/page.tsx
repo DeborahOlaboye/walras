@@ -88,7 +88,7 @@ export default function TradeScreen() {
     const deadline = BigInt(Math.floor(Date.now() / 1000) + dlMin * 60);
     const hash = await submitOrder(dir, amountWei, sqrtLimit, deadline);
     if (!hash) return;
-    flash(`${f(Number(amount), 2)} ${inSym} escrowed · you're in the window`);
+    flash(`${f(Number(amount), 2)} ${inSym} held · you are in the group`);
     // The order is in a window that is already counting down, and the window is the
     // thing worth watching. Staying on this form makes a successful submission look
     // like nothing happened.
@@ -116,10 +116,10 @@ export default function TradeScreen() {
     >
       <Panel padding={30}>
         <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.03em" }}>
-          Submit intent
+          Place an order
         </div>
         <div style={{ fontSize: 15, color: t.dim, marginTop: 6 }}>
-          Escrowed now, priced at the batch clearing price later.
+          Your tokens are held now. The price is decided when your group trades, a few seconds later.
         </div>
 
         <div
@@ -172,7 +172,7 @@ export default function TradeScreen() {
             className="mono"
             style={{ fontSize: 11, color: t.faint, letterSpacing: "0.05em" }}
           >
-            EXACT INPUT
+            AMOUNT TO SELL
           </span>
           <button
             onClick={() => setAmount(String(Math.floor(fromWei(inBal))))}
@@ -197,7 +197,7 @@ export default function TradeScreen() {
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
             inputMode="decimal"
-            aria-label="Exact input amount"
+            aria-label="Amount to sell"
             className="mono"
             style={{
               flex: 1,
@@ -227,7 +227,7 @@ export default function TradeScreen() {
             letterSpacing: "0.05em",
           }}
         >
-          DEADLINE
+          CANCEL MY ORDER AFTER
         </div>
         <div style={{ marginTop: 9, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {DEADLINES.map((m) => (
@@ -250,9 +250,9 @@ export default function TradeScreen() {
             textWrap: "pretty",
           }}
         >
-          Checked when the batch settles, not when the window closes. Settlement waits
-          for whoever next touches the pool, so a short deadline can expire before that
-          happens and your input is refunded whole.
+          If your group has not traded by then, you get all your tokens back instead. Groups
+          usually trade within seconds, but on a quiet pool it can take longer — so give
+          it room unless you want the order to expire.
         </div>
 
         <div
@@ -277,7 +277,7 @@ export default function TradeScreen() {
             <span>
               LIMIT PRICE ·{" "}
               {limPct === null
-                ? "UNBOUNDED · TAKE THE CLEARING PRICE"
+                ? "ACCEPT WHATEVER PRICE THE GROUP GETS"
                 : `accept up to ${limPct}% worse than pool`}
             </span>
             <span>{adv ? "−" : "+"}</span>
@@ -300,9 +300,10 @@ export default function TradeScreen() {
                   textWrap: "pretty",
                 }}
               >
-                Set as tolerance from the current pool price. If the clearing price
-                lands worse than this, your input is refunded whole — never partially
-                filled.
+                The worst price you are willing to accept, set as a percentage below
+                the current one. If the group ends up trading worse than this, you are
+                simply left out and get all your tokens back — you never get a partial
+                trade.
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {LIMITS.map((v) => (
@@ -312,7 +313,7 @@ export default function TradeScreen() {
                     className="mono"
                     style={chip(limPct === v)}
                   >
-                    {v === null ? "unbounded" : `−${v}%`}
+                    {v === null ? "any price" : `−${v}%`}
                   </button>
                 ))}
               </div>
@@ -320,7 +321,7 @@ export default function TradeScreen() {
                 className="mono"
                 style={{ fontSize: 11, color: t.faint, wordBreak: "break-all" }}
               >
-                sqrtPriceLimitX96 = {sqrtLimit.toString()}
+                sent to the contract as {sqrtLimit.toString()}
               </div>
             </div>
           )}
@@ -341,7 +342,7 @@ export default function TradeScreen() {
               fontWeight: 600,
             }}
           >
-            {pending === "Approve" ? "Approving…" : `1 · Approve ${inSym} for the hook`}
+            {pending === "Approve" ? "Approving…" : `1 · Allow Walras to use your ${inSym}`}
           </button>
         )}
 
@@ -361,10 +362,10 @@ export default function TradeScreen() {
           }}
         >
           {pending === "Submit"
-            ? "Escrowing…"
+            ? "Placing…"
             : !address
               ? "Connect a wallet"
-              : `${needsApprove ? "2 · " : ""}Escrow ${f(Number(amount) || 0, 2)} ${inSym} into the batch`}
+              : `${needsApprove ? "2 · " : ""}Place order for ${f(Number(amount) || 0, 2)} ${inSym}`}
         </button>
 
         <div
@@ -377,8 +378,8 @@ export default function TradeScreen() {
           }}
         >
           {b.phase === "open"
-            ? `joins batch #${String(b.currentId)} · ${secondsLeft(b.remainMs)} left`
-            : `opens a new ${Number(b.batchDuration)}s window`}
+            ? `joins group #${String(b.currentId)} · ${secondsLeft(b.remainMs)} left to join`
+            : `starts a new ${Number(b.batchDuration)}-second group`}
         </div>
 
         {fromWei(inBal) < 1 && address && (
@@ -395,7 +396,7 @@ export default function TradeScreen() {
               fontSize: 11.5,
             }}
           >
-            {pending === "Mint" ? "MINTING…" : `FAUCET · MINT 5,000 ${inSym}`}
+            {pending === "Mint" ? "SENDING…" : `GET 5,000 FREE TEST ${inSym}`}
           </button>
         )}
       </Panel>
@@ -406,7 +407,7 @@ export default function TradeScreen() {
             className="mono"
             style={{ fontSize: 11, color: t.faint, letterSpacing: "0.05em" }}
           >
-            REFERENCE AT POOL MID
+            ROUGHLY WHAT YOU WOULD GET
           </div>
           <div className="mono" style={{ fontSize: 34, margin: "10px 0 4px" }}>
             ≈ {f(est, 3)} {outSym}
@@ -426,9 +427,9 @@ export default function TradeScreen() {
               textWrap: "pretty",
             }}
           >
-            Not a quote. Your fill is the window&apos;s uniform clearing price — the
-            same number every other order in the batch gets, which is why none of them
-            can be reordered around yours.
+            This is an estimate, not a promise. Your actual price is whatever the whole
+            group trades at — the same price everyone else in it gets. That is exactly
+            why nobody can be shuffled in front of you to profit from your trade.
           </div>
         </Panel>
 
@@ -443,7 +444,7 @@ export default function TradeScreen() {
             }}
           >
             <div style={{ fontSize: 15, fontWeight: 600 }}>
-              The window you&apos;d join
+              The group you would join
             </div>
             <div
               className="mono"
@@ -464,10 +465,10 @@ export default function TradeScreen() {
             }}
           >
             {[
-              ["batch", `#${String(b.currentId)} · ${b.count} orders`],
-              ["escrowed " + SYM0, f(b.e0, 2)],
-              ["escrowed " + SYM1, f(b.e1, 2)],
-              ["pool mid", b.price ? f(b.price, 5) : "—"],
+              ["group", `#${String(b.currentId)} · ${b.count} ${b.count === 1 ? "order" : "orders"}`],
+              ["people selling " + SYM0, f(b.e0, 2)],
+              ["people selling " + SYM1, f(b.e1, 2)],
+              ["current pool price", b.price ? f(b.price, 5) : "—"],
             ].map(([k, v]) => (
               <div
                 key={k}

@@ -10,19 +10,16 @@ import { shortAddress } from "@/lib/format";
 
 const NAV = [
   ["Home", "/"],
-  ["Batch", "/batch"],
-  ["Trade", "/trade"],
-  ["Claims", "/claims"],
-  ["Explorer", "/explorer"],
+  ["Live group", "/batch"],
+  ["Place order", "/trade"],
+  ["Collect", "/claims"],
+  ["History", "/history"],
   ["Proof", "/proof"],
 ] as const;
 
 export function Header() {
-  const { theme, accent, t, setTheme } = useUi();
+  const { accent, t } = useUi();
   const path = usePathname();
-  // The landing page carries its own calls to action and reads as a front door rather
-  // than part of the app, so the section nav only appears once you are inside.
-  const showNav = path !== "/";
   const {
     address,
     connect,
@@ -31,6 +28,7 @@ export function Header() {
     wrongChain,
     switchChain,
     switching,
+    disconnect,
   } = useWallet();
   const { claimable } = useClaimable(address);
 
@@ -90,7 +88,9 @@ export function Header() {
         </span>
       </Link>
 
-      {showNav && (
+      {/* Every section is readable without a wallet — connecting is only needed to
+          place an order or collect. The nav therefore shows everywhere, landing
+          included, so nothing looks gated behind connecting. */}
       <nav style={{ display: "flex", flexWrap: "wrap", gap: 4, minWidth: 0 }}>
         {NAV.map(([label, href]) => {
           const active = path === href;
@@ -136,7 +136,6 @@ export function Header() {
           );
         })}
       </nav>
-      )}
 
       <div
         style={{
@@ -149,21 +148,6 @@ export function Header() {
           minWidth: 0,
         }}
       >
-        <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="mono"
-          style={{
-            padding: "8px 14px",
-            border: "1px solid var(--line)",
-            borderRadius: 8,
-            fontSize: 11,
-            letterSpacing: "0.06em",
-            color: t.dim,
-          }}
-        >
-          {theme === "dark" ? "LIGHT" : "DARK"}
-        </button>
-
         {/* On the wrong chain this is the fix, not a complaint about it — one click
             switches, adding the network first if the wallet has never seen it. */}
         <button
@@ -199,38 +183,78 @@ export function Header() {
               : "Unichain Sepolia"}
         </button>
 
-        <button
-          onClick={address ? undefined : connect}
-          disabled={!hasProvider || connecting}
-          className="mono"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-            padding: "7px 13px",
-            border: "1px solid var(--line)",
-            borderRadius: 8,
-            fontSize: 11.5,
-            color: t.fg,
-            cursor: address ? "default" : "pointer",
-          }}
-        >
-          <span
+        {address ? (
+          <div
             style={{
-              width: 15,
-              height: 15,
-              borderRadius: 4,
-              background: address ? "var(--acc)" : t.line,
+              display: "flex",
+              alignItems: "center",
+              border: "1px solid var(--line)",
+              borderRadius: 8,
+              overflow: "hidden",
             }}
-          />
-          {!hasProvider
-            ? "NO WALLET"
-            : connecting
-              ? "CONNECTING…"
-              : address
-                ? shortAddress(address)
-                : "CONNECT"}
-        </button>
+          >
+            <span
+              className="mono"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "7px 11px 7px 13px",
+                fontSize: 11.5,
+                color: t.fg,
+              }}
+            >
+              <span
+                style={{
+                  width: 15,
+                  height: 15,
+                  borderRadius: 4,
+                  background: "var(--acc)",
+                }}
+              />
+              {shortAddress(address)}
+            </span>
+            <button
+              onClick={() => void disconnect()}
+              title="Disconnect this wallet"
+              aria-label="Disconnect wallet"
+              className="mono"
+              style={{
+                padding: "7px 11px",
+                borderLeft: "1px solid var(--line)",
+                fontSize: 11.5,
+                color: t.dim,
+                alignSelf: "stretch",
+              }}
+            >
+              DISCONNECT
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={connect}
+            disabled={!hasProvider || connecting}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              padding: "9px 18px",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              // The only thing a first-time visitor must do, so it gets the accent
+              // rather than sitting in a row of outlined grey controls.
+              background: hasProvider ? accent : t.panel2,
+              color: hasProvider ? "var(--onAcc)" : t.faint,
+            }}
+          >
+            {!hasProvider
+              ? "No wallet found"
+              : connecting
+                ? "Connecting…"
+                : "Connect wallet"}
+          </button>
+        )}
       </div>
     </header>
   );
