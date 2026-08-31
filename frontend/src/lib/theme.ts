@@ -42,24 +42,17 @@ export const THEMES: Record<ThemeName, Tokens> = {
   },
 };
 
-/// The accent is the only loud colour in the palette. It marks the zeroForOne side and
-/// every actionable surface; the opposing side uses `bone` so neither direction reads
-/// as the "good" one the way green/red would.
-export const ACCENTS: ReadonlyArray<readonly [string, string]> = [
-  ["lime", "#c9f24d"],
-  ["iris", "#b39cf7"],
-  ["mint", "#4ee0c4"],
-  ["sun", "#f2e14d"],
-  ["ember", "#f2884d"],
-];
-
-export const DEFAULT_ACCENT = ACCENTS[0][1];
+/// The single accent. It marks the zeroForOne side and every actionable surface; the
+/// opposing side uses `bone`, so neither direction reads as the "good" one the way
+/// green/red would. Fixed rather than switchable — one loud colour is what makes the
+/// residual stand out as the exception it is, and a palette picker undermines that.
+export const ACCENT = "#c9f24d";
 
 /// Text that sits on the accent. The accent range is deliberately bright, so this is
 /// always the dark ground rather than a per-theme value.
 export const ON_ACCENT = "#0a0b09";
 
-export function cssVars(theme: ThemeName, accent: string): React.CSSProperties {
+export function cssVars(theme: ThemeName): React.CSSProperties {
   const t = THEMES[theme];
   return {
     "--bg": t.bg,
@@ -72,7 +65,7 @@ export function cssVars(theme: ThemeName, accent: string): React.CSSProperties {
     "--bone": t.bone,
     "--dim": t.dim,
     "--faint": t.faint,
-    "--acc": accent,
+    "--acc": ACCENT,
     "--onAcc": ON_ACCENT,
     background: t.bg,
     colorScheme: theme,

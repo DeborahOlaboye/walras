@@ -4,14 +4,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { Header } from "./Header";
 import { Toast } from "./Toast";
-import { DEFAULT_ACCENT, THEMES, cssVars, type ThemeName } from "@/lib/theme";
+import { ACCENT, THEMES, cssVars, type ThemeName } from "@/lib/theme";
 
 interface Ui {
   theme: ThemeName;
+  /// Fixed. Exposed on the context because most components colour against it, but it
+  /// is no longer something the viewer can change.
   accent: string;
   t: (typeof THEMES)[ThemeName];
   setTheme: (t: ThemeName) => void;
-  setAccent: (a: string) => void;
   flash: (message: string) => void;
 }
 
@@ -27,7 +28,6 @@ const STORE_KEY = "walras.ui";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<ThemeName>("dark");
-  const [accent, setAccent] = useState(DEFAULT_ACCENT);
   const [toast, setToast] = useState<string | null>(null);
 
   // Remember the viewer's palette between visits. Storage can throw outright in a
@@ -36,9 +36,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { theme?: ThemeName; accent?: string };
+      const saved = JSON.parse(raw) as { theme?: ThemeName };
       if (saved.theme === "dark" || saved.theme === "light") setTheme(saved.theme);
-      if (typeof saved.accent === "string") setAccent(saved.accent);
     } catch {
       /* no stored preference is a perfectly good state */
     }
@@ -46,11 +45,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ theme, accent }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ theme }));
     } catch {
       /* refusing to persist is not worth surfacing */
     }
-  }, [theme, accent]);
+  }, [theme]);
 
   const flash = useCallback((message: string) => {
     setToast(message);
@@ -58,13 +57,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<Ui>(
-    () => ({ theme, accent, t: THEMES[theme], setTheme, setAccent, flash }),
-    [theme, accent, flash],
+    () => ({ theme, accent: ACCENT, t: THEMES[theme], setTheme, flash }),
+    [theme, flash],
   );
 
   return (
     <UiContext.Provider value={value}>
-      <div style={cssVars(theme, accent)}>
+      <div style={cssVars(theme)}>
         <div
           style={{
             minHeight: "100vh",

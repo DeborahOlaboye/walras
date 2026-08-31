@@ -7,7 +7,6 @@ import { useUi } from "./AppShell";
 import { useClaimable } from "@/hooks/useClaimable";
 import { useWallet } from "@/hooks/useWallet";
 import { shortAddress } from "@/lib/format";
-import { ACCENTS } from "@/lib/theme";
 
 const NAV = [
   ["Home", "/"],
@@ -19,8 +18,11 @@ const NAV = [
 ] as const;
 
 export function Header() {
-  const { theme, accent, t, setTheme, setAccent } = useUi();
+  const { theme, accent, t, setTheme } = useUi();
   const path = usePathname();
+  // The landing page carries its own calls to action and reads as a front door rather
+  // than part of the app, so the section nav only appears once you are inside.
+  const showNav = path !== "/";
   const {
     address,
     connect,
@@ -88,6 +90,7 @@ export function Header() {
         </span>
       </Link>
 
+      {showNav && (
       <nav style={{ display: "flex", flexWrap: "wrap", gap: 4, minWidth: 0 }}>
         {NAV.map(([label, href]) => {
           const active = path === href;
@@ -133,6 +136,7 @@ export function Header() {
           );
         })}
       </nav>
+      )}
 
       <div
         style={{
@@ -145,34 +149,6 @@ export function Header() {
           minWidth: 0,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            gap: 7,
-            alignItems: "center",
-            padding: "7px 12px",
-            border: "1px solid var(--line)",
-            borderRadius: 999,
-          }}
-        >
-          {ACCENTS.map(([name, col]) => (
-            <button
-              key={name}
-              title={name}
-              aria-label={`Accent ${name}`}
-              onClick={() => setAccent(col)}
-              style={{
-                width: 15,
-                height: 15,
-                borderRadius: "50%",
-                background: col,
-                outline: `1px solid ${col === accent ? t.fg : "transparent"}`,
-                outlineOffset: 2,
-              }}
-            />
-          ))}
-        </div>
-
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="mono"
