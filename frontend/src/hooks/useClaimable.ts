@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Address } from "viem";
 
 import { walrasHookAbi } from "@/lib/abi";
-import { DEPLOY_BLOCK, publicClient } from "@/lib/chain";
+import { DEPLOY_BLOCK, getLogsChunked, publicClient } from "@/lib/chain";
 import { POOL_ID, addresses, poolKey } from "@/lib/config";
 
 const hook = { address: addresses.hook, abi: walrasHookAbi } as const;
@@ -26,13 +26,18 @@ export function useClaimable(address: Address | null) {
       return;
     }
     try {
-      const logs = await publicClient.getContractEvents({
-        ...hook,
-        eventName: "OrderSubmitted",
-        args: { poolId: POOL_ID, owner: address },
-        fromBlock: DEPLOY_BLOCK,
-        toBlock: "latest",
-      });
+      // Chunked for the RPC's 10,000 block log limit, same as the claims screen.
+      const logs = await getLogsChunked(
+        (fromBlock, toBlock) =>
+          publicClient.getContractEvents({
+            ...hook,
+            eventName: "OrderSubmitted",
+            args: { poolId: POOL_ID, owner: address },
+            fromBlock,
+            toBlock,
+          }),
+        { fromBlock: DEPLOY_BLOCK },
+      );
 
       let ready = 0;
       let waiting = 0;
@@ -87,7 +92,9 @@ export function useClaimable(address: Address | null) {
 
   useEffect(() => {
     read();
-    const iv = setInterval(read, 10_000);
+    // Slower than it was: each read now walks the log range in chunks, so polling
+    // hard would mean tens of requests a minute for a number that changes rarely.
+    const iv = setInterval(read, 30_000);
     return () => clearInterval(iv);
   }, [read]);
 

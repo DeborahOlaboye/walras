@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Address } from "viem";
 
 import { walrasHookAbi } from "@/lib/abi";
-import { DEPLOY_BLOCK, publicClient } from "@/lib/chain";
+import { DEPLOY_BLOCK, getLogsChunked, publicClient } from "@/lib/chain";
 import { POOL_ID, addresses } from "@/lib/config";
 import type { Order } from "@/lib/netting";
 
@@ -36,21 +36,32 @@ export function useSettled(refreshKey = 0) {
 
   const load = useCallback(async () => {
     try {
+      // Chunked: a single deploy-to-latest query exceeds the RPC's 10,000 block
+      // limit and comes back as an error, which this would swallow as "no groups".
+      // Twenty is more than the screen shows, so stop as soon as that many are found.
       const [settledLogs, failedLogs] = await Promise.all([
-        publicClient.getContractEvents({
-          ...hook,
-          eventName: "BatchSettled",
-          args: { poolId: POOL_ID },
-          fromBlock: DEPLOY_BLOCK,
-          toBlock: "latest",
-        }),
-        publicClient.getContractEvents({
-          ...hook,
-          eventName: "BatchSettlementFailed",
-          args: { poolId: POOL_ID },
-          fromBlock: DEPLOY_BLOCK,
-          toBlock: "latest",
-        }),
+        getLogsChunked(
+          (fromBlock, toBlock) =>
+            publicClient.getContractEvents({
+              ...hook,
+              eventName: "BatchSettled",
+              args: { poolId: POOL_ID },
+              fromBlock,
+              toBlock,
+            }),
+          { fromBlock: DEPLOY_BLOCK, enough: (found) => found.length >= 20 },
+        ),
+        getLogsChunked(
+          (fromBlock, toBlock) =>
+            publicClient.getContractEvents({
+              ...hook,
+              eventName: "BatchSettlementFailed",
+              args: { poolId: POOL_ID },
+              fromBlock,
+              toBlock,
+            }),
+          { fromBlock: DEPLOY_BLOCK, enough: (found) => found.length >= 20 },
+        ),
       ]);
 
       const rows: SettledBatch[] = [];

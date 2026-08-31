@@ -19,6 +19,51 @@ export const publicClient = createPublicClient({
   transport: http(),
 });
 
+/// Unichain Sepolia's RPC rejects any eth_getLogs spanning more than 10,000 blocks.
+/// Blocks are about a second apart, so a single deploy-to-latest query stops working
+/// roughly three hours after deployment — silently, since the error surfaces as an
+/// empty result to anything that catches it.
+const MAX_LOG_RANGE = 9_000n;
+
+/// Walks a log query backwards from the head in permitted-size chunks.
+///
+/// Backwards because everything here wants recent activity first: the history screen
+/// shows the newest groups, and a wallet's orders are almost always recent. `enough`
+/// lets a caller stop as soon as it has what it needs instead of scanning to the
+/// deploy block every time.
+export async function getLogsChunked<T>(
+  query: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
+  opts: {
+    fromBlock: bigint;
+    /// Return true to stop early. Called after each chunk, newest first.
+    enough?: (collected: T[]) => boolean;
+    /// Hard cap on chunks, so a long-lived deployment cannot hang the UI.
+    maxChunks?: number;
+  },
+): Promise<T[]> {
+  const head = await publicClient.getBlockNumber();
+  const floor = opts.fromBlock;
+  const maxChunks = opts.maxChunks ?? 40;
+
+  const collected: T[] = [];
+  let to = head;
+  let chunks = 0;
+
+  while (to >= floor && chunks < maxChunks) {
+    const from = to - MAX_LOG_RANGE + 1n > floor ? to - MAX_LOG_RANGE + 1n : floor;
+    const batch = await query(from, to);
+    // Each chunk is newer than the ones after it, so prepending keeps the overall
+    // result in ascending block order.
+    collected.unshift(...batch);
+    chunks += 1;
+    if (opts.enough?.(collected)) break;
+    if (from === floor) break;
+    to = from - 1n;
+  }
+
+  return collected;
+}
+
 /// EIP-1193 injected provider, if the browser has one. Deliberately narrow: this app
 /// needs one wallet on one chain, which is the entire reason wagmi's connector suite
 /// (and its dependency tree) is not here.

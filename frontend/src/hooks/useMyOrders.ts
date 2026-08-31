@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Address } from "viem";
 
 import { walrasHookAbi } from "@/lib/abi";
-import { DEPLOY_BLOCK, publicClient } from "@/lib/chain";
+import { DEPLOY_BLOCK, getLogsChunked, publicClient } from "@/lib/chain";
 import { POOL_ID, addresses, poolKey } from "@/lib/config";
 
 export interface MyOrder {
@@ -48,13 +48,20 @@ export function useMyOrders(address: Address | null, refreshKey = 0) {
     }
     setLoading(true);
     try {
-      const logs = await publicClient.getContractEvents({
-        ...hook,
-        eventName: "OrderSubmitted",
-        args: { poolId: POOL_ID, owner: address },
-        fromBlock: DEPLOY_BLOCK,
-        toBlock: "latest",
-      });
+      // Chunked to stay inside the RPC's 10,000 block log limit. No early stop —
+      // this screen has to show every order the wallet has placed, not just recent
+      // ones, or someone would find orders quietly missing from their own history.
+      const logs = await getLogsChunked(
+        (fromBlock, toBlock) =>
+          publicClient.getContractEvents({
+            ...hook,
+            eventName: "OrderSubmitted",
+            args: { poolId: POOL_ID, owner: address },
+            fromBlock,
+            toBlock,
+          }),
+        { fromBlock: DEPLOY_BLOCK },
+      );
 
       // Group by batch so the UI can show one settlement price per window.
       const byBatch = new Map<string, { batchId: bigint; indices: bigint[] }>();
