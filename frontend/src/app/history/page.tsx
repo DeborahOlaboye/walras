@@ -96,8 +96,8 @@ export default function ExplorerScreen() {
         </Panel>
       ) : !d ? (
         <Panel padding={48} style={{ textAlign: "center", color: t.dim }}>
-          No group has traded yet. Place an order, wait out the 12 seconds, then close the
-          group — what happened will show up here.
+          No group has traded yet. Place an order, wait out the minute, then close the group —
+          what happened will show up here.
         </Panel>
       ) : (
         <>

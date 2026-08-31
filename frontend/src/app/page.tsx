@@ -17,8 +17,8 @@ const STEPS = [
   ],
   [
     "02",
-    "You wait 12 seconds",
-    "Everyone who orders in those 12 seconds is grouped together, including you.",
+    "You wait up to a minute",
+    "Everyone who orders in that time is grouped together with you.",
   ],
   [
     "03",
@@ -97,9 +97,9 @@ export default function Landing() {
             }}
           >
             On a normal exchange, bots watch for your trade and jump in front of it to
-            take a cut. Walras stops that by collecting every order for 12 seconds and
-            trading them all at once, at a single price. Nobody goes first, so there is
-            nothing to jump in front of.
+            take a cut. Walras stops that by collecting orders for a minute and trading them
+            all at once, at a single price. Nobody goes first, so there is nothing to
+            jump in front of.
           </p>
 
           <div style={{ display: "flex", gap: 12, marginTop: 36, flexWrap: "wrap" }}>
@@ -366,7 +366,7 @@ export default function Landing() {
                 textWrap: "pretty",
               }}
             >
-              If you are selling WDA and someone else in the same 12 seconds is buying
+              If you are selling WDA and someone else in the same group is buying
               it, the two of you simply trade with each other. Only whatever is left
               over after that goes to the pool. Small trades move the price less, and a
               price that barely moves is not worth attacking.

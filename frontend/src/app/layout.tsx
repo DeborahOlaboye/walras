@@ -21,7 +21,7 @@ const azeret = Azeret_Mono({
 export const metadata: Metadata = {
   title: "Walras",
   description:
-    "A Uniswap v4 pool that collects orders for 12 seconds and trades them all at one price, so bots cannot jump ahead of you.",
+    "A Uniswap v4 pool that collects orders into groups and trades each group at one price, so bots cannot jump ahead of you.",
 };
 
 export default function RootLayout({
