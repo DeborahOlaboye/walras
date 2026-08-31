@@ -69,7 +69,7 @@ export default function BatchScreen() {
   /// One sentence under the clock, answering "what am I looking at" without
   /// assuming the reader knows what a batch auction is.
   const headline = replay
-    ? "This group has already traded. Every order in it got the single price below."
+    ? "This group has already traded. Every order in it got that one price — no matter who placed theirs first."
     : b.phase === "open"
       ? `Anyone who places an order in the next ${secondsLeft(b.remainMs)} joins this group and gets exactly the same price as everyone else in it.`
       : b.phase === "elapsed"
@@ -140,7 +140,7 @@ export default function BatchScreen() {
                   style={{ fontSize: 12, color: t.faint, letterSpacing: "0.06em" }}
                 >
                   {replay
-                    ? `THE ONE PRICE THEY ALL GOT · ${SYM1} PER ${SYM0}`
+                    ? `${SYM1} FOR EVERY 1 ${SYM0}`
                     : b.phase === "open"
                       ? "UNTIL THIS GROUP TRADES"
                       : b.phase === "elapsed"
@@ -217,22 +217,20 @@ export default function BatchScreen() {
             </div>
 
             <div style={{ marginTop: 30 }}>
+              {/* Only what the legend above does not already say. The amounts live
+                  there; these are the ratio and the price, stated once each. */}
               <StatGrid
-                columns={3}
+                columns={2}
                 padding="18px 20px"
                 valueSize={21}
                 items={[
                   {
-                    k: "TRADED WITH EACH OTHER",
-                    v: `${f(matchedPct, 1)}%`,
+                    k: "SHARE THAT SKIPPED THE POOL",
+                    v: orders.length ? `${f(matchedPct, 1)}%` : "—",
                     fg: accent,
                   },
                   {
-                    k: "LEFT OVER FOR THE POOL",
-                    v: orders.length ? f(view.residualAmount, 2) : "—",
-                  },
-                  {
-                    k: replay ? "PRICE THEY GOT" : "POOL PRICE NOW",
+                    k: replay ? "PRICE THEY ALL GOT" : "POOL PRICE RIGHT NOW",
                     v: view.price ? f(view.price, 5) : "—",
                   },
                 ]}
@@ -310,6 +308,10 @@ export default function BatchScreen() {
               {[...orders].reverse().map((o, i) => {
                 const mine =
                   address && o.owner.toLowerCase() === address.toLowerCase();
+                // The list is reversed for newest-first, so recover the position the
+                // order actually holds in the group. Several orders from one wallet
+                // would otherwise be three identical rows reading "You".
+                const position = orders.length - i;
                 return (
                   <div
                     key={`${o.owner}-${i}`}
@@ -335,6 +337,12 @@ export default function BatchScreen() {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14 }}>
                         {mine ? "You" : shortAddress(o.owner)}
+                        <span
+                          className="mono"
+                          style={{ fontSize: 11, color: t.faint, marginLeft: 7 }}
+                        >
+                          #{position}
+                        </span>
                       </div>
                       <div
                         className="mono"

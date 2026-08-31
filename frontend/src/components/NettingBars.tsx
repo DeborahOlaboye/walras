@@ -97,48 +97,79 @@ export function NettingBars({
         </div>
       </Row>
 
+      {/* A legend rather than labels pinned to the bar widths. Those were positioned
+          by percentage, so at a high match rate the two ran into each other and read
+          as one jammed-together string. This holds up at any ratio. */}
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 16 }}>
         <div />
-        <div style={{ position: "relative", height: 38 }}>
-          <div
-            className="mono"
-            style={{
-              position: "absolute",
-              left: 0,
-              width: `${netPct}%`,
-              borderTop: "1px solid var(--line)",
-              paddingTop: 8,
-              fontSize: 11,
-              color: t.dim,
-              letterSpacing: "0.05em",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              transition: "width 0.6s",
+        <div
+          style={{
+            marginTop: 6,
+            borderTop: "1px solid var(--line)",
+            paddingTop: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 9,
+          }}
+        >
+          <LegendRow
+            swatch={{
+              background: `repeating-linear-gradient(135deg, ${t.hatch} 0 5px, transparent 5px 10px)`,
+              border: `1px solid ${t.line}`,
             }}
-          >
-            MATCHED WITH EACH OTHER · {f(matched, 1)}
-          </div>
-          <div
-            className="mono"
-            style={{
-              position: "absolute",
-              left: `${netPct}%`,
-              width: `${Math.max(res0Pct, res1Pct)}%`,
-              borderTop: `1px solid ${resFg}`,
-              paddingTop: 8,
-              fontSize: 11,
-              color: resFg,
-              letterSpacing: "0.05em",
-              whiteSpace: "nowrap",
-              transition: "all 0.6s",
-            }}
-          >
-            LEFT OVER, GOES TO THE POOL · {f(residualAmount, 1)}{" "}
-            {residualZeroForOne ? SYM0 : SYM1}
-          </div>
+            label="Matched with each other"
+            value={f(matched, 2)}
+            valueColor={t.fg}
+          />
+          <LegendRow
+            swatch={{ background: resFg }}
+            label="Left over, went to the pool"
+            value={`${f(residualAmount, 2)} ${residualZeroForOne ? SYM0 : SYM1}`}
+            valueColor={resFg}
+          />
         </div>
         {showTotals && <div />}
       </div>
+    </div>
+  );
+}
+
+function LegendRow({
+  swatch,
+  label,
+  value,
+  valueColor,
+}: {
+  swatch: React.CSSProperties;
+  label: string;
+  value: string;
+  valueColor: string;
+}) {
+  const { t } = useUi();
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 14,
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <span
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: 3,
+            flex: "none",
+            ...swatch,
+          }}
+        />
+        <span style={{ fontSize: 14, color: t.dim }}>{label}</span>
+      </span>
+      <span className="mono" style={{ fontSize: 13.5, color: valueColor }}>
+        {value}
+      </span>
     </div>
   );
 }
