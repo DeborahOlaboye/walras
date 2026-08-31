@@ -20,10 +20,9 @@ export default function BatchScreen() {
   const { poke, pending } = useActions(b.refresh);
   const { batches } = useSettled();
 
-  // A window lives twelve seconds; the pool is idle the rest of the time. Rather than
-  // show an empty shell, fall back to the last completed window — clearly marked as
-  // history, never dressed up as live — so the screen always demonstrates the
-  // mechanism instead of a row of zeros.
+  // A window is open for a minute and the pool is idle the rest of the time. Rather
+  // than show an empty shell, fall back to the last completed group — clearly marked
+  // as past, never dressed up as live — so the screen always demonstrates something.
   const last = b.phase === "idle" ? batches.find((x) => !x.failed) : undefined;
   const replay = !!last;
 
@@ -36,11 +35,15 @@ export default function BatchScreen() {
         );
         const split = nettingSplit(eligible0, eligible1, last.clearingSqrtPriceX96);
         const res = residual(eligible0, eligible1, last.clearingSqrtPriceX96);
+        const sum = (z: boolean) =>
+          fromWei(
+            last.orders
+              .filter((o) => o.zeroForOne === z)
+              .reduce((s, o) => s + o.amountIn, 0n),
+          );
         return {
-          e0: fromWei(last.orders.filter((o) => o.zeroForOne).reduce((s, o) => s + o.amountIn, 0n)),
-          e1: fromWei(last.orders.filter((o) => !o.zeroForOne).reduce((s, o) => s + o.amountIn, 0n)),
-          n0: last.orders.filter((o) => o.zeroForOne).length,
-          n1: last.orders.filter((o) => !o.zeroForOne).length,
+          e0: sum(true),
+          e1: sum(false),
           netPct: split.netPct,
           res0Pct: split.res0Pct,
           res1Pct: split.res1Pct,
@@ -52,20 +55,33 @@ export default function BatchScreen() {
       })()
     : null;
 
-  // Everything below reads from one of the two sources, chosen once here.
   const view = replay && lastView ? lastView : b;
   const orders = replay && last ? last.orders : b.orders;
-  const batchLabel = replay && last ? String(last.id) : String(b.currentId);
+  const groupNo = replay && last ? String(last.id) : String(b.currentId);
 
-  const cdFg = b.phase === "idle" ? t.faint : b.phase === "open" ? accent : t.fg;
-  const statusFg = replay ? t.dim : cdFg;
+  const liveFg =
+    b.phase === "idle" ? t.faint : b.phase === "open" ? accent : t.fg;
+  const matchedPct =
+    view.e0 + view.e1 > 0
+      ? (view.matched * 2) / Math.max(view.e0 + view.e1, 1e-9) * 100
+      : 0;
+
+  /// One sentence under the clock, answering "what am I looking at" without
+  /// assuming the reader knows what a batch auction is.
+  const headline = replay
+    ? "This group has already traded. Every order in it got the single price below."
+    : b.phase === "open"
+      ? `Anyone who places an order in the next ${secondsLeft(b.remainMs)} joins this group and gets exactly the same price as everyone else in it.`
+      : b.phase === "elapsed"
+        ? "The minute is up. This group is ready to trade — someone just has to close it."
+        : `Nothing is collecting right now. The next order placed starts a new ${Number(b.batchDuration)}-second group.`;
 
   return (
     <div style={{ padding: "34px 30px 90px", maxWidth: 1500 }}>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) 380px",
+          gridTemplateColumns: "minmax(0,1fr) 360px",
           gap: 26,
           alignItems: "start",
         }}
@@ -73,84 +89,85 @@ export default function BatchScreen() {
         <div
           style={{ display: "flex", flexDirection: "column", gap: 26, minWidth: 0 }}
         >
-          {/* Window header */}
+          {/* The clock is the whole point of this screen, so it leads rather than
+              sitting in a corner competing with three other panels. */}
           <Panel>
-            <div
-              style={{
-                padding: "30px 30px 24px",
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: 30,
-              }}
-            >
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div
-                    style={{
-                      fontSize: 30,
-                      fontWeight: 600,
-                      letterSpacing: "-0.03em",
-                    }}
-                  >
-                    Group #{batchLabel}
-                  </div>
-                  <StatusPill
-                    label={replay ? "LAST GROUP · ALREADY TRADED" : b.statusLabel}
-                    fg={statusFg}
-                    line={b.phase === "idle" ? t.line : statusFg}
-                    pulse={!replay}
-                  />
+            <div style={{ padding: "30px 30px 26px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em" }}>
+                  Group #{groupNo}
                 </div>
-                <div
-                  style={{
-                    marginTop: 10,
-                    fontSize: 16,
-                    color: t.dim,
-                    maxWidth: "62ch",
-                    textWrap: "pretty",
-                  }}
-                >
-                  {replay
-                    ? "Nothing is being collected right now. This is the last group that traded — every order in it got the one price shown below."
-                    : b.statusNote}
-                </div>
+                <StatusPill
+                  label={replay ? "ALREADY TRADED" : b.statusLabel}
+                  fg={replay ? t.dim : liveFg}
+                  line={b.phase === "idle" && !replay ? t.line : replay ? t.line : liveFg}
+                  pulse={!replay && b.phase !== "idle"}
+                />
               </div>
-              <div style={{ textAlign: "right", flex: "none" }}>
-                <div
-                  className="mono"
-                  style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
-                >
-                  {replay
-                    ? "THEY ALL TRADED AT"
-                    : b.phase === "idle"
-                      ? "NOTHING COLLECTING YET"
-                      : b.phase === "open"
-                        ? "TRADES IN"
-                        : "TIME IS UP"}
-                </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 18,
+                  flexWrap: "wrap",
+                }}
+              >
                 <div
                   className="mono"
                   style={{
-                    fontSize: replay ? 44 : b.phase === "idle" ? 38 : 68,
-                    lineHeight: 1.05,
-                    color: replay ? accent : cdFg,
+                    fontSize: 72,
+                    lineHeight: 1,
+                    color: replay ? accent : liveFg,
                   }}
                 >
                   {replay && lastView
                     ? f(lastView.price, 5)
                     : b.phase === "idle"
-                      ? "IDLE"
+                      ? "—"
                       : secondsLeft(b.remainMs)}
                 </div>
                 <div
                   className="mono"
-                  style={{ fontSize: 12, color: t.dim, marginTop: 4 }}
+                  style={{ fontSize: 12, color: t.faint, letterSpacing: "0.06em" }}
                 >
                   {replay
-                    ? `${orders.length} ${orders.length === 1 ? "order" : "orders"} · all at this one price`
-                    : `${b.count} of ${b.maxOrders} orders so far`}
+                    ? `THE ONE PRICE THEY ALL GOT · ${SYM1} PER ${SYM0}`
+                    : b.phase === "open"
+                      ? "UNTIL THIS GROUP TRADES"
+                      : b.phase === "elapsed"
+                        ? "READY TO TRADE"
+                        : "NO GROUP OPEN"}
                 </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  fontSize: 16,
+                  lineHeight: 1.5,
+                  color: t.dim,
+                  maxWidth: "64ch",
+                  textWrap: "pretty",
+                }}
+              >
+                {headline}
+              </div>
+
+              <div
+                className="mono"
+                style={{ marginTop: 14, fontSize: 12, color: t.faint }}
+              >
+                {orders.length} {orders.length === 1 ? "order" : "orders"}
+                {!replay && ` · room for ${b.maxOrders}`}
               </div>
             </div>
 
@@ -159,77 +176,30 @@ export default function BatchScreen() {
                 style={{
                   height: 4,
                   width: replay ? "100%" : `${b.pct}%`,
-                  background: replay ? t.line : cdFg,
+                  background: replay ? t.line : liveFg,
                   transition: "width 0.1s linear",
                 }}
               />
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-              <div
-                style={{
-                  padding: "24px 30px",
-                  borderRight: "1px solid var(--line)",
-                }}
-              >
-                <div
-                  className="mono"
-                  style={{ fontSize: 11, letterSpacing: "0.06em", color: accent }}
-                >
-                  PEOPLE SELLING {SYM0}
-                </div>
-                <div className="mono" style={{ fontSize: 34, marginTop: 8 }}>
-                  {f(view.e0, 2)}
-                </div>
-                <div
-                  className="mono"
-                  style={{ fontSize: 12, color: t.faint, marginTop: 4 }}
-                >
-                  {view.n0} {view.n0 === 1 ? "order" : "orders"} · held until the group
-                  trades
-                </div>
-              </div>
-              <div style={{ padding: "24px 30px", textAlign: "right" }}>
-                <div
-                  className="mono"
-                  style={{ fontSize: 11, letterSpacing: "0.06em", color: t.bone }}
-                >
-                  PEOPLE SELLING {SYM1}
-                </div>
-                <div className="mono" style={{ fontSize: 34, marginTop: 8 }}>
-                  {f(view.e1, 2)}
-                </div>
-                <div
-                  className="mono"
-                  style={{ fontSize: 12, color: t.faint, marginTop: 4 }}
-                >
-                  {view.n1} {view.n1 === 1 ? "order" : "orders"} · held until the group
-                  trades
-                </div>
-              </div>
-            </div>
           </Panel>
 
-          {/* Live netting */}
+          {/* Amounts live on the bars themselves rather than in a separate block
+              above, which previously showed the same two numbers twice. */}
           <Panel padding="28px 30px 32px">
+            <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-0.02em" }}>
+              {replay ? "How these orders matched up" : "How these orders will match up"}
+            </div>
             <div
               style={{
-                display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                gap: 24,
-                flexWrap: "wrap",
+                marginTop: 6,
+                fontSize: 14.5,
+                color: t.dim,
+                maxWidth: "70ch",
+                textWrap: "pretty",
               }}
             >
-              <div
-                style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-0.02em" }}
-              >
-                {replay ? "How those orders matched up" : "Matching, live"}
-              </div>
-              <div style={{ fontSize: 14.5, color: t.dim }}>
-                Buyers and sellers here trade with each other first. Only what is left
-                over goes to the pool.
-              </div>
+              People selling {SYM0} trade directly with people selling {SYM1}, as far as
+              the two sides go. Only the difference between them reaches the pool.
             </div>
 
             <div style={{ marginTop: 26 }}>
@@ -240,6 +210,9 @@ export default function BatchScreen() {
                 matched={view.matched}
                 residualAmount={view.residualAmount}
                 residualZeroForOne={view.residualZeroForOne}
+                e0={view.e0}
+                e1={view.e1}
+                showTotals
               />
             </div>
 
@@ -250,42 +223,46 @@ export default function BatchScreen() {
                 valueSize={21}
                 items={[
                   {
-                    k: "MATCHED WITH EACH OTHER",
-                    v:
-                      view.e0 + view.e1 > 0
-                        ? `${f(((view.matched * 2) / Math.max(view.e0 + view.e1, 1e-9)) * 100, 1)}%`
-                        : "0%",
+                    k: "TRADED WITH EACH OTHER",
+                    v: `${f(matchedPct, 1)}%`,
                     fg: accent,
                   },
                   {
                     k: "LEFT OVER FOR THE POOL",
-                    v: orders.length ? `${f(view.residualAmount, 2)}` : "—",
+                    v: orders.length ? f(view.residualAmount, 2) : "—",
                   },
                   {
-                    k: replay ? "PRICE EVERYONE GOT" : "CURRENT POOL PRICE",
+                    k: replay ? "PRICE THEY GOT" : "POOL PRICE NOW",
                     v: view.price ? f(view.price, 5) : "—",
                   },
                 ]}
               />
             </div>
 
-            {b.phase === "elapsed" && (
+            {b.phase === "elapsed" && !replay && (
               <div
                 style={{
                   marginTop: 24,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  gap: 24,
+                  gap: 20,
                   border: `1px solid ${accent}`,
                   borderRadius: 12,
                   padding: "18px 20px",
                   flexWrap: "wrap",
                 }}
               >
-                <div style={{ fontSize: 14.5, color: t.dim, textWrap: "pretty" }}>
-                  The 12 seconds are up. Anyone can close this group and trade it —
-                  do it yourself and you keep a {b.bountyBips / 100}% reward for
+                <div
+                  style={{
+                    fontSize: 14.5,
+                    color: t.dim,
+                    textWrap: "pretty",
+                    maxWidth: "56ch",
+                  }}
+                >
+                  Anyone can close this group — you do not have to have an order in it.
+                  Whoever does keeps {b.bountyBips / 100}% of what the group saved, for
                   covering the gas.
                 </div>
                 <button
@@ -301,44 +278,38 @@ export default function BatchScreen() {
                   }}
                 >
                   {pending === "Settle"
-                    ? "Settling…"
+                    ? "Closing…"
                     : address
-                      ? "Settle this batch"
-                      : "Connect to settle"}
+                      ? "Close and trade it"
+                      : "Connect a wallet to close it"}
                 </button>
               </div>
             )}
           </Panel>
         </div>
 
-        {/* Orders in this window */}
         <Panel style={{ position: "sticky", top: 96 }}>
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
               padding: "16px 20px",
               borderBottom: "1px solid var(--line)",
             }}
           >
             <div style={{ fontSize: 15, fontWeight: 600 }}>
-              {replay ? "Orders in that window" : "Orders in this window"}
+              {replay ? "Who was in it" : "Who is in this group"}
             </div>
-            <div className="mono" style={{ fontSize: 11, color: t.faint }}>
-              {replay ? "ALL GOT THE SAME PRICE" : "ALL GET THE SAME PRICE"}
+            <div style={{ fontSize: 13, color: t.faint, marginTop: 3 }}>
+              {replay
+                ? "All of them traded at one price"
+                : "All of them will get one price"}
             </div>
           </div>
 
           {orders.length > 0 ? (
-            <div style={{ maxHeight: 620, overflowY: "auto" }}>
+            <div style={{ maxHeight: 560, overflowY: "auto" }}>
               {[...orders].reverse().map((o, i) => {
                 const mine =
                   address && o.owner.toLowerCase() === address.toLowerCase();
-                const unbounded =
-                  o.sqrtPriceLimitX96 < 4295128740n ||
-                  o.sqrtPriceLimitX96 >
-                    1461446703485210103287273052203988822378723970000n;
                 return (
                   <div
                     key={`${o.owner}-${i}`}
@@ -347,7 +318,7 @@ export default function BatchScreen() {
                       gridTemplateColumns: "3px 1fr auto",
                       alignItems: "center",
                       gap: 12,
-                      padding: "13px 20px",
+                      padding: "14px 20px",
                       borderBottom: `1px solid ${t.panel2}`,
                       animation: "rowIn 0.35s ease both",
                       background: mine ? t.panel2 : "transparent",
@@ -356,15 +327,14 @@ export default function BatchScreen() {
                     <div
                       style={{
                         width: 3,
-                        height: 26,
+                        height: 28,
                         borderRadius: 2,
                         background: o.zeroForOne ? accent : t.bone,
                       }}
                     />
                     <div style={{ minWidth: 0 }}>
-                      <div className="mono" style={{ fontSize: 12, color: t.dim }}>
-                        {mine ? "you · " : ""}
-                        {shortAddress(o.owner)}
+                      <div style={{ fontSize: 14 }}>
+                        {mine ? "You" : shortAddress(o.owner)}
                       </div>
                       <div
                         className="mono"
@@ -374,24 +344,11 @@ export default function BatchScreen() {
                           marginTop: 3,
                         }}
                       >
-                        {o.zeroForOne
-                          ? `selling ${SYM0} for ${SYM1}`
-                          : `selling ${SYM1} for ${SYM0}`}
+                        selling {o.zeroForOne ? SYM0 : SYM1}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div className="mono" style={{ fontSize: 13.5 }}>
-                        {f(Number(o.amountIn) / 1e18, 2)}{" "}
-                        {o.zeroForOne ? SYM0 : SYM1}
-                      </div>
-                      <div
-                        className="mono"
-                        style={{ fontSize: 10.5, color: t.faint, marginTop: 3 }}
-                      >
-                        {unbounded
-                          ? "accepts any price"
-                          : `min price ${f(sqrtPriceToPrice(o.sqrtPriceLimitX96), 4)}`}
-                      </div>
+                    <div className="mono" style={{ fontSize: 14, textAlign: "right" }}>
+                      {f(fromWei(o.amountIn), 2)}
                     </div>
                   </div>
                 );
@@ -400,28 +357,21 @@ export default function BatchScreen() {
           ) : (
             <div
               style={{
-                padding: "46px 24px",
+                padding: "40px 22px",
                 display: "flex",
                 flexDirection: "column",
                 gap: 14,
                 alignItems: "flex-start",
               }}
             >
-              <div
-                className="mono"
-                style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
-              >
-                NOTHING COLLECTING YET
-              </div>
               <div style={{ fontSize: 15, color: t.dim, textWrap: "pretty" }}>
-                There is no countdown until someone places an order. The first order —
-                yours or anyone else&apos;s — starts a {Number(b.batchDuration)}-second
-                timer, and everyone who joins before it runs out trades together.
+                Nobody has placed an order yet. The first one starts the clock, and
+                everyone who joins in the {Number(b.batchDuration)} seconds after
+                trades alongside them.
               </div>
               <Link
                 href="/trade"
                 style={{
-                  marginTop: 4,
                   padding: "12px 20px",
                   borderRadius: 10,
                   background: accent,
