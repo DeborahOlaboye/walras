@@ -173,10 +173,34 @@ Drop `--broadcast` to simulate first; the run prints every address a frontend ne
 Chain-specific addresses and the deployment parameters — batch window, bounty share, order
 cap — live in `script/Deployments.sol`.
 
-The batch window is the most consequential of those parameters. Too short and batches stop
-netting, which removes the entire benefit; too long and waiting for a fill stops being
-tolerable. It is set to 12 seconds on Unichain, whose one-second blocks make that roughly
-a dozen blocks of accumulated flow.
+The batch window is the most consequential of those parameters, and it is set to 60
+seconds.
+
+Exclusivity does not depend on it: nothing can trade against the pool outside a batch at
+any window length, so there is no ordering advantage to win regardless. What the window
+tunes is the second benefit — how much flow finds an opposite order and settles without
+touching pool liquidity at all. That needs several orders to share a window, and placing
+one costs six to ten seconds of human time reading a wallet prompt. Sixty seconds sits
+comfortably above that while staying a wait a trader would accept.
+
+### Live deployment
+
+Unichain Sepolia (chain 1301), all contracts verified on Uniscan:
+
+| | |
+|---|---|
+| WalrasHook | `0x1fd0240c08Cd81f1Affc5e70ff78500e9D0DC080` |
+| WDA (currency0) | `0xb4825389bB57874BF526df276f6f4f13C73cA674` |
+| WDB (currency1) | `0xfdF50d778eb0b3c06d30CDDa51996Ce2a710a89D` |
+| PoolManager | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
+| Liquidity router | `0x66210D5C2F83aD77084e4c79f25956828cE0d344` |
+| Swap router (exists to be rejected) | `0x0D19dCd70fDe5c522B17973D5E5Cbd160C6beb0F` |
+| poolId | `0x87cc0db91c355694816d3d338ce683302a85d94ffde442837fde5757a6fa07b0` |
+
+Note for anyone redeploying: `forge` 1.8 rewrites `new Contract{salt: …}` in scripts
+through a generated helper rather than the CREATE2 factory, so the address `HookMiner`
+computes is not where the hook lands and construction reverts with `HookAddressNotValid`.
+Deploy with forge 1.2.x until the script is reworked to call the factory directly.
 
 ## Status
 

@@ -12,7 +12,7 @@ import { unichainSepolia } from "./config";
 /// Block this deployment landed in. Event queries start here rather than at genesis —
 /// nothing about this pool exists before it, and scanning 61M empty blocks would time
 /// the RPC out.
-export const DEPLOY_BLOCK = 61260237n;
+export const DEPLOY_BLOCK = 61343917n;
 
 export const publicClient = createPublicClient({
   chain: unichainSepolia,

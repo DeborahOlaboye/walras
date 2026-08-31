@@ -16,11 +16,11 @@ export const unichainSepolia = defineChain({
 /// vars so the app runs correctly straight after a clone — nothing to configure to
 /// see the deployed hook. Set the matching NEXT_PUBLIC_* var to point at a redeploy.
 const DEPLOYED = {
-  hook: "0x8a6c2f663B8D57D19DCE51ed61a4a2aFd93c4080",
-  currency0: "0x5e5E90EaC14983d0BaB3b869BA48c7Fe8B42B076",
-  currency1: "0xd4870F305C44226A4F235161E5bcBa66e2C65545",
+  hook: "0x1fd0240c08Cd81f1Affc5e70ff78500e9D0DC080",
+  currency0: "0xb4825389bB57874BF526df276f6f4f13C73cA674",
+  currency1: "0xfdF50d778eb0b3c06d30CDDa51996Ce2a710a89D",
   poolManager: "0x00B036B58a818B1BC34d502D3fE730Db729e62AC",
-  liquidityRouter: "0xc6fB8C158c6FAe0988c561DA2511B67000E337B6",
+  liquidityRouter: "0x66210D5C2F83aD77084e4c79f25956828cE0d344",
   /// A stock v4 router, deployed purely so the exclusivity proof has something real to
   /// be rejected. Calling PoolManager.swap directly would fail with ManagerLocked —
   /// which says nothing about the hook — so the proof needs a caller that genuinely
@@ -60,7 +60,7 @@ export const poolKey = {
 /// keccak256 of the abi-encoded PoolKey. Hardcoded rather than derived at runtime
 /// because every read is keyed by it and it cannot change without a redeploy.
 export const POOL_ID = (process.env.NEXT_PUBLIC_POOL_ID ??
-  "0xa95e9ff5650cd8db14901be97d8794775f37ef9c6f82a2340cc12103a63630f0") as `0x${string}`;
+  "0x87cc0db91c355694816d3d338ce683302a85d94ffde442837fde5757a6fa07b0") as `0x${string}`;
 
 export const SYM0 = "WDA";
 export const SYM1 = "WDB";

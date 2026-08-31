@@ -23,11 +23,16 @@ library Deployments {
     }
 
     /// @notice How long a batch accepts orders once its first order arrives.
-    /// @dev Twelve seconds on a chain with one-second blocks gathers roughly a dozen blocks
-    /// of flow — long enough for two sides to meet, short enough that waiting for a fill
-    /// stays tolerable. This is the single most consequential parameter in the deployment:
-    /// too short and batches stop netting, too long and nobody wants to trade here.
-    uint64 internal constant BATCH_DURATION = 12;
+    /// @dev Sized against human latency rather than block time. Exclusivity — the
+    /// guarantee that nothing trades outside a batch — holds at any window length, so
+    /// this parameter tunes the second benefit: how much flow finds an opposite order
+    /// and settles without touching pool liquidity at all.
+    ///
+    /// That only happens when several orders share a window, and placing one costs six
+    /// to ten seconds of reading a wallet prompt and confirming it. Sixty seconds is
+    /// comfortably above that, so a window can fill, while staying a wait a trader would
+    /// accept.
+    uint64 internal constant BATCH_DURATION = 60;
 
     /// @notice Share of each settlement's surplus paid to whoever triggered it.
     uint16 internal constant SETTLEMENT_BOUNTY_BIPS = 500;
