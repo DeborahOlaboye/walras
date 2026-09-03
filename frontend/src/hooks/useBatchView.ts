@@ -68,12 +68,16 @@ export function useBatchView(): BatchView {
           ? "COLLECTING ORDERS"
           : "TIME IS UP";
 
+    // Read the window off the contract rather than writing it into the copy. It was
+    // hardcoded as 12 here, and stayed 12 in the UI after the deployment moved to 60.
+    const secs = Number(batchDuration);
+
     const statusNote =
       phase === "idle"
-        ? "Nothing is being collected right now. The next person to place an order starts a new 12-second group."
+        ? `Nothing is being collected right now. The next person to place an order starts a new ${secs}-second group.`
         : phase === "open"
-          ? "Every order placed in these 12 seconds trades at the same price. Nobody in the group can be pushed ahead of or behind you."
-          : "The 12 seconds are up. Anyone can now close this group and trade it — it happens automatically the next time someone uses this pool.";
+          ? "Every order placed in this group trades at the same price. Nobody in it can be pushed ahead of or behind you."
+          : "The time is up. Anyone can now close this group and trade it — it also happens automatically the next time someone uses this pool.";
 
     return {
       ...pool,

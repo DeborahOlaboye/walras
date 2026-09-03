@@ -18,7 +18,7 @@ import { f, fromWei, priceToSqrtPriceX96, secondsLeft, toWei } from "@/lib/forma
 
 /// In minutes. The deadline is checked when the batch actually settles, and settlement
 /// waits for whoever next touches the pool — on quiet traffic that can be far longer
-/// than the twelve-second window suggests, so the longest option is the safe default.
+/// than the batch window suggests, so the longest option is the safe default.
 const DEADLINES = [1, 5, 15, 60] as const;
 /// Tolerance from the pool's current price, rather than a raw sqrtPriceX96. Exposing
 /// Q64.96 to a person would be hostile; the contract still receives the encoded bound.

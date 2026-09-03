@@ -35,30 +35,43 @@ export async function getLogsChunked<T>(
   query: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
   opts: {
     fromBlock: bigint;
-    /// Return true to stop early. Called after each chunk, newest first.
+    /// Return true to stop early. Checked after each wave, newest blocks first.
     enough?: (collected: T[]) => boolean;
     /// Hard cap on chunks, so a long-lived deployment cannot hang the UI.
     maxChunks?: number;
+    /// Requests in flight at once. Chunks are independent, so issuing them one after
+    /// another just multiplies the round trip — a deployment a couple of days old
+    /// already spans two dozen chunks, which is seconds of dead time per screen.
+    concurrency?: number;
   },
 ): Promise<T[]> {
   const head = await publicClient.getBlockNumber();
   const floor = opts.fromBlock;
-  const maxChunks = opts.maxChunks ?? 40;
+  const maxChunks = opts.maxChunks ?? 80;
+  const concurrency = opts.concurrency ?? 8;
 
-  const collected: T[] = [];
+  // Plan every range up front, newest first, so waves can be issued in parallel.
+  const ranges: Array<[bigint, bigint]> = [];
   let to = head;
-  let chunks = 0;
-
-  while (to >= floor && chunks < maxChunks) {
+  while (to >= floor && ranges.length < maxChunks) {
     const from = to - MAX_LOG_RANGE + 1n > floor ? to - MAX_LOG_RANGE + 1n : floor;
-    const batch = await query(from, to);
-    // Each chunk is newer than the ones after it, so prepending keeps the overall
-    // result in ascending block order.
-    collected.unshift(...batch);
-    chunks += 1;
-    if (opts.enough?.(collected)) break;
+    ranges.push([from, to]);
     if (from === floor) break;
     to = from - 1n;
+  }
+
+  const collected: T[] = [];
+  for (let i = 0; i < ranges.length; i += concurrency) {
+    const wave = ranges.slice(i, i + concurrency);
+    const results = await Promise.all(
+      // One failed chunk should not lose the rest of the scan.
+      wave.map(([from, until]) => query(from, until).catch(() => [] as T[])),
+    );
+    // The wave runs newest to oldest; reversing it gives ascending block order, and
+    // each successive wave is older still, so it goes on the front.
+    const ascending = results.reverse().flat();
+    collected.unshift(...ascending);
+    if (opts.enough?.(collected)) break;
   }
 
   return collected;

@@ -77,8 +77,10 @@ export function useMyOrders(address: Address | null, refreshKey = 0) {
         byBatch.set(key, entry);
       }
 
-      const result: BatchGroup[] = [];
-      for (const { batchId, indices } of byBatch.values()) {
+      // Every batch is independent, so resolve them together. Walking them one at a
+      // time meant a round trip per batch before anything appeared on screen.
+      const result = await Promise.all(
+        [...byBatch.values()].map(async ({ batchId, indices }) => {
         const [rawBatch, rawSettlement] = await Promise.all([
           publicClient.readContract({
             ...hook,
@@ -168,15 +170,16 @@ export function useMyOrders(address: Address | null, refreshKey = 0) {
           }),
         );
 
-        result.push({
+        return {
           id: batchId,
           settled,
           failed,
           closedBy,
           clearingSqrtPriceX96: sqrtPriceX96,
           orders: orders.sort((a, b) => Number(a.orderIndex - b.orderIndex)),
-        });
-      }
+        } satisfies BatchGroup;
+        }),
+      );
 
       result.sort((a, b) => Number(b.id - a.id));
       setGroups(result);

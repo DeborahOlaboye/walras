@@ -41,7 +41,7 @@ export function shortAddress(a?: string | null): string {
 }
 
 /// Countdowns are the one place a tenth of a second is meaningful — the batch window
-/// is only twelve of them.
+/// is measured in them.
 export function secondsLeft(ms: number): string {
   return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
 }
