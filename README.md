@@ -31,11 +31,11 @@ The reason LVR is hard to fix from inside an AMM is that a constant-function cur
 
 1. **Order submission.** Users submit swap intents (direction, amount, limit price, deadline) to an escrow contract, which takes custody of the input token.
 
-2. **Batch accumulation.** Orders accumulate over a batch window. No external keeper is required, settlement is self-triggering, the next interaction with the contract checks whether the current window has closed and settles the prior batch first. The triggering caller is reimbursed from a settlement bounty funded by batch fees, so whoever pays the O(n) settlement gas isn't left worse off than everyone they settled for.
+2. **Batch accumulation.** Orders accumulate over a batch window. No external keeper is required, settlement is self-triggering, the next interaction with the contract checks whether the current window has closed and settles the prior batch first. Whoever closes the batch is recorded and paid a share of the settlement surplus that would otherwise go to LPs, so the party carrying the O(n) settlement gas is not left worse off than everyone they settled for.
 
 3. **Netting.** At settlement, opposite-direction orders net against each other directly. Only the unmatched residual, the net imbalance ever touches the pool's actual liquidity.
 
-4. **Residual execution and price discovery.** The residual executes once against the AMM curve via a single `PoolManager.swap()` call, initiated by Walras's own settlement logic. The curve walk ends at a marginal price `P*`, the price at which batch demand, batch supply, and AMM liquidity intersect.
+4. **Price discovery, then residual execution.** `P*`, the price at which batch demand, batch supply and AMM liquidity intersect, is solved in closed form *before* anything touches the pool, from the batch's own orders and the pool's current price and liquidity. The residual is then pushed through the curve as a single exact-input `PoolManager.swap()` with no price limit imposed, because `P*` was derived from this pool's own liquidity and the curve is expected to stop there on its own.
 
 5. **Uniform settlement at `P*`.** Every order in the batch settles at `P*`, netted and residual alike. This is the load-bearing step, and it is what makes the mechanism work:
 
@@ -44,6 +44,8 @@ The reason LVR is hard to fix from inside an AMM is that a constant-function cur
    - No oracle is involved anywhere. `P*` is a deterministic function of the batch's own orders and the pool's own liquidity, computable on-chain.
 
 6. **LP compensation on netted volume.** Netted orders never touch the curve, so they would otherwise pay LPs nothing while still relying on the pool for price discovery. Walras charges netted volume the pool's own fee rate and donates it to LPs. LPs therefore earn on gross batch volume while bearing inventory risk only on the residual.
+
+   One case falls out of this: a pool with no in-range liquidity cannot receive a `donate()` at all. Rather than strand the surplus in the contract, settlement detects that and returns it to the batch's own traders as a better fill instead.
 
 7. **Exclusivity enforcement.** The hook's `beforeSwap` callback rejects any swap whose caller isn't the authorized settlement path, so no router, aggregator, or direct call can bypass the batch and trade against the pool outside it. This is what makes the protection pool-level rather than opt-in.
 
@@ -150,7 +152,7 @@ drifting from it.
 
 Contract build is broken into sections, in dependency order:
 
-1. **Hook shell + exclusivity enforcement** — `beforeSwap` rejects any swap whose caller isn't the authorized settler. Validated first as a standalone spike, since every later section depends on this assumption holding. Done, 3/3 tests passing.
+1. **Hook shell + exclusivity enforcement** — `beforeSwap` rejects any swap whose caller isn't the authorized settler. Validated first as a standalone spike, since every later section depends on this assumption holding. Now that the hook settles its own batches, the positive case is covered by the settlement suite and what remains here is the negative half. Done, 2/2 tests passing.
 2. **Order escrow / intent submission** — pulls input tokens into custody, records intents against the current batch. Done, 15/15 tests passing.
 3. **Batch lifecycle management** — a batch's window starts on its first order rather than on the previous batch's close, so an idle pool runs no timer and never accumulates empty batches. The first interaction past the window retires the batch and opens the next; `poke()` lets anyone do this without trading, for pools that go quiet. Whoever triggers the close is recorded, since they are the party section 6 reimburses. Done, 17/17 tests passing.
 4. **Order netting engine** — pure matching logic, no pool and no state: which orders are eligible at a candidate price, how much offsets internally, and what imbalance is left over. Netting and pricing are one fixed point — you cannot offset currency0 against currency1 without a price — so this section answers the netting half exactly for a price given to it, and section 5 solves for the price that makes the answer self-consistent. Done, 18/18 tests passing.
