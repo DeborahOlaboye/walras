@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { maxUint256, type Address } from "viem";
+import type { Address } from "viem";
 
 import { useUi } from "@/components/AppShell";
 import { useWallet } from "./useWallet";
@@ -14,6 +14,12 @@ import {
   walletClientFor,
 } from "@/lib/chain";
 import { addresses, poolKey, unichainSepolia } from "@/lib/config";
+
+/// A large but readable allowance, rather than the usual unbounded approval. An
+/// unlimited approve renders in the wallet as a 78-digit number, which reads as alarming
+/// to anyone being careful — exactly the wrong first impression for someone trying the
+/// app for the first time. A million covers any amount the faucet hands out.
+const APPROVAL_AMOUNT = 1_000_000n * 10n ** 18n;
 
 /// Every write the app can make. Each one waits for the receipt before reporting
 /// success, so the UI never claims a batch moved before the chain agrees.
@@ -77,6 +83,15 @@ export function useActions(onDone?: () => void) {
     [run],
   );
 
+  /// Both tokens in one action. A wallet needs each side to be able to place orders
+  /// in both directions, and making someone find the faucet twice is a good way to
+  /// have them give up before seeing anything work.
+  const mintBoth = useCallback(async () => {
+    const first = await mint(0);
+    if (!first) return null;
+    return mint(1);
+  }, [mint]);
+
   const approve = useCallback(
     (which: 0 | 1) =>
       run("Approve", async (account) => {
@@ -85,7 +100,7 @@ export function useActions(onDone?: () => void) {
           address: which === 0 ? addresses.currency0 : addresses.currency1,
           abi: demoTokenAbi,
           functionName: "approve",
-          args: [addresses.hook, maxUint256],
+          args: [addresses.hook, APPROVAL_AMOUNT],
           chain: null,
           account,
         });
@@ -148,7 +163,7 @@ export function useActions(onDone?: () => void) {
     [run],
   );
 
-  return { pending, mint, approve, submitOrder, poke, claim };
+  return { pending, mint, mintBoth, approve, submitOrder, poke, claim };
 }
 
 /// Token balances and the hook's allowance, polled together since the trade screen

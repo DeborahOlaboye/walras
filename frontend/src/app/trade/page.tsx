@@ -31,7 +31,7 @@ export default function TradeScreen() {
   const router = useRouter();
 
   const [dir, setDir] = useState(true); // true = zeroForOne
-  const [amount, setAmount] = useState("250");
+  const [amount, setAmount] = useState("");
   const [limPct, setLimPct] = useState<number | null>(null);
   const [dlMin, setDlMin] = useState<number>(60);
   const [adv, setAdv] = useState(false);
@@ -44,7 +44,7 @@ export default function TradeScreen() {
     return () => clearInterval(iv);
   }, [bal.read, nonce]);
 
-  const { submitOrder, approve, mint, pending } = useActions(() => {
+  const { submitOrder, approve, mintBoth, pending } = useActions(() => {
     setNonce((n) => n + 1);
     b.refresh();
   });
@@ -57,6 +57,9 @@ export default function TradeScreen() {
   const amountWei = useMemo(() => toWei(amount || "0"), [amount]);
   const needsApprove = amountWei > 0n && allowance < amountWei;
   const insufficient = amountWei > inBal;
+  /// Both sides matter: a wallet holding only one token cannot place an order in the
+  /// other direction, which is half the point of the demo.
+  const needsTokens = bal.bal0 === 0n && bal.bal1 === 0n;
 
   // At the pool's current mid. Deliberately labelled as a reference rather than a
   // quote — the real fill is whatever the batch clears at.
@@ -121,6 +124,57 @@ export default function TradeScreen() {
         <div style={{ fontSize: 15, color: t.dim, marginTop: 6 }}>
           Your tokens are held now. The price is decided when your group trades, a few seconds later.
         </div>
+
+        {/* Anyone arriving with an empty wallet has nothing to trade, and the first
+            thing they would otherwise hit is an approval prompt for tokens they do not
+            own. Offer the faucet before the form rather than underneath it. */}
+        {address && needsTokens && (
+          <div
+            style={{
+              marginTop: 22,
+              border: `1px solid ${accent}`,
+              borderRadius: 12,
+              padding: "18px 20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 18,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ maxWidth: "44ch" }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>
+                Start here — you have no test tokens yet
+              </div>
+              <div
+                style={{
+                  fontSize: 14,
+                  color: t.dim,
+                  marginTop: 4,
+                  lineHeight: 1.45,
+                  textWrap: "pretty",
+                }}
+              >
+                These are free play tokens on a test network. They are worth nothing and
+                cost nothing beyond a little test gas.
+              </div>
+            </div>
+            <button
+              onClick={() => void mintBoth()}
+              disabled={pending !== null}
+              style={{
+                flex: "none",
+                padding: "13px 22px",
+                borderRadius: 10,
+                background: accent,
+                color: "var(--onAcc)",
+                fontWeight: 600,
+              }}
+            >
+              {pending === "Mint" ? "Sending…" : `Get 5,000 ${SYM0} + ${SYM1}`}
+            </button>
+          </div>
+        )}
 
         <div
           style={{
@@ -382,23 +436,6 @@ export default function TradeScreen() {
             : `starts a new ${Number(b.batchDuration)}-second group`}
         </div>
 
-        {fromWei(inBal) < 1 && address && (
-          <button
-            onClick={() => mint(dir ? 0 : 1)}
-            className="mono"
-            style={{
-              marginTop: 14,
-              width: "100%",
-              padding: 12,
-              borderRadius: 10,
-              border: `1px dashed ${t.line}`,
-              color: t.dim,
-              fontSize: 11.5,
-            }}
-          >
-            {pending === "Mint" ? "SENDING…" : `GET 5,000 FREE TEST ${inSym}`}
-          </button>
-        )}
       </Panel>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

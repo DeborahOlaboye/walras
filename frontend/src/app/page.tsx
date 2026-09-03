@@ -114,7 +114,7 @@ export default function Landing() {
                 fontSize: 16,
               }}
             >
-              See it happening
+              See a live group
             </Link>
             <Link
               href="/trade"
@@ -195,102 +195,120 @@ export default function Landing() {
             </Link>
           </div>
 
-          <div
-            style={{
-              padding: "26px 24px 20px",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "space-between",
-            }}
-          >
-            <div>
-              <div
-                className="mono"
-                style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
-              >
-                {b.phase === "idle"
-                  ? "NOTHING COLLECTING YET"
-                  : b.phase === "open"
-                    ? "THIS GROUP TRADES IN"
-                    : "TIME IS UP"}
-              </div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: b.phase === "idle" ? 34 : 62,
-                  lineHeight: 1.1,
-                  color: cdFg,
-                }}
-              >
-                {b.phase === "idle" ? "WAITING" : secondsLeft(b.remainMs)}
-              </div>
-              <div
-                className="mono"
-                style={{ fontSize: 11, color: t.faint, marginTop: 4 }}
-              >
-                {b.phase === "idle"
-                  ? "starts with the first order"
-                  : b.phase === "open"
-                    ? "one price for everyone in it"
-                    : "waiting for someone to close it"}
-              </div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div
-                className="mono"
-                style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
-              >
-                ORDERS SO FAR
-              </div>
-              <div className="mono" style={{ fontSize: 30 }}>
-                {b.count}
-                <span style={{ fontSize: 15, color: t.faint }}>/{b.maxOrders}</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ height: 3, background: t.panel2, margin: "0 24px" }}>
+          {/* With no group running, the live layout is a countdown reading "WAITING",
+              a 0/64 counter and two 0.00 totals — four ways of saying nothing is
+              happening. One statement and a way in is more use. */}
+          {b.phase === "idle" ? (
             <div
               style={{
-                height: 3,
-                width: `${b.pct}%`,
-                background: cdFg,
-                transition: "width 0.1s linear",
+                padding: "34px 24px 32px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+                alignItems: "flex-start",
               }}
-            />
-          </div>
-
-          <div
-            className="mono"
-            style={{
-              padding: "18px 24px 8px",
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-            }}
-          >
-            <span style={{ color: accent }}>
-              {f(b.e0, 2)} {SYM0} →
-            </span>
-            <span style={{ color: t.bone }}>
-              ← {f(b.e1, 2)} {SYM1}
-            </span>
-          </div>
-
-          <div style={{ maxHeight: 232, overflow: "hidden" }}>
-            {b.orders.length === 0 ? (
+            >
               <div
                 style={{
-                  padding: "24px",
-                  fontSize: 14,
+                  fontSize: 17,
+                  lineHeight: 1.5,
                   color: t.dim,
-                  borderTop: `1px solid ${t.panel2}`,
+                  textWrap: "pretty",
                 }}
               >
-                Nobody has placed an order yet.
+                No group is collecting right now. The next order placed starts one, and
+                everyone who joins within {Number(b.batchDuration)} seconds trades
+                alongside it at a single price.
               </div>
-            ) : (
-              [...b.orders]
+              <Link
+                href="/trade"
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: 10,
+                  background: accent,
+                  color: "var(--onAcc)",
+                  fontWeight: 600,
+                }}
+              >
+                Start one
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div
+                style={{
+                  padding: "26px 24px 20px",
+                  display: "flex",
+                  alignItems: "flex-end",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
+                  >
+                    {b.phase === "open" ? "THIS GROUP TRADES IN" : "TIME IS UP"}
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 62, lineHeight: 1.1, color: cdFg }}
+                  >
+                    {secondsLeft(b.remainMs)}
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: t.faint, marginTop: 4 }}
+                  >
+                    {b.phase === "open"
+                      ? "one price for everyone in it"
+                      : "waiting for someone to close it"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: t.faint, letterSpacing: "0.06em" }}
+                  >
+                    ORDERS SO FAR
+                  </div>
+                  <div className="mono" style={{ fontSize: 30 }}>
+                    {b.count}
+                    <span style={{ fontSize: 15, color: t.faint }}>/{b.maxOrders}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ height: 3, background: t.panel2, margin: "0 24px" }}>
+                <div
+                  style={{
+                    height: 3,
+                    width: `${b.pct}%`,
+                    background: cdFg,
+                    transition: "width 0.1s linear",
+                  }}
+                />
+              </div>
+
+              <div
+                className="mono"
+                style={{
+                  padding: "18px 24px 8px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: accent }}>
+                  {f(b.e0, 2)} {SYM0} →
+                </span>
+                <span style={{ color: t.bone }}>
+                  ← {f(b.e1, 2)} {SYM1}
+                </span>
+              </div>
+
+              <div style={{ maxHeight: 232, overflow: "hidden" }}>
+                {[...b.orders]
                 .reverse()
                 .slice(0, 4)
                 .map((o, i) => (
@@ -320,9 +338,10 @@ export default function Landing() {
                       {o.zeroForOne ? `${SYM0} → ${SYM1}` : `${SYM1} → ${SYM0}`}
                     </span>
                   </div>
-                ))
-            )}
-          </div>
+                ))}
+              </div>
+            </>
+          )}
         </Panel>
       </section>
 

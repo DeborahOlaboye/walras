@@ -36,6 +36,27 @@ export function NettingBars({
   const resFg = residualZeroForOne ? accent : t.bone;
   const cols = showTotals ? "128px 1fr 150px" : "118px 1fr";
 
+  // With nothing in the group, the full layout renders as four zeros and two empty
+  // bars, which reads as broken rather than empty. Say what will appear instead.
+  const empty = (e0 ?? 0) + (e1 ?? 0) === 0 && matched === 0;
+  if (empty) {
+    return (
+      <div
+        style={{
+          border: `1px dashed ${t.line}`,
+          borderRadius: 12,
+          padding: "28px 24px",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 15, color: t.dim, maxWidth: "52ch", margin: "0 auto" }}>
+          Once orders arrive, this shows how much of the group trades directly between
+          people, and how little of it reaches the pool.
+        </div>
+      </div>
+    );
+  }
+
   const hatch = {
     width: `${netPct}%`,
     background: `repeating-linear-gradient(135deg, ${t.hatch} 0 6px, transparent 6px 12px)`,
