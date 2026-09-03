@@ -7,7 +7,7 @@ import { NettingBars } from "@/components/NettingBars";
 import { Panel, StatGrid, StatusPill } from "@/components/Stat";
 import { useActions } from "@/hooks/useActions";
 import { useBatchView } from "@/hooks/useBatchView";
-import { useSettled } from "@/hooks/useSettled";
+import { useLastSettled } from "@/hooks/useLastSettled";
 import { useWallet } from "@/hooks/useWallet";
 import { SYM0, SYM1 } from "@/lib/config";
 import { f, fromWei, secondsLeft, shortAddress, sqrtPriceToPrice } from "@/lib/format";
@@ -18,12 +18,12 @@ export default function BatchScreen() {
   const b = useBatchView();
   const { address } = useWallet();
   const { poke, pending } = useActions(b.refresh);
-  const { batches } = useSettled();
+  const lastSettled = useLastSettled(b.currentId);
 
   // A window is open for a minute and the pool is idle the rest of the time. Rather
   // than show an empty shell, fall back to the last completed group — clearly marked
   // as past, never dressed up as live — so the screen always demonstrates something.
-  const last = b.phase === "idle" ? batches.find((x) => !x.failed) : undefined;
+  const last = b.phase === "idle" ? lastSettled : null;
   const replay = !!last;
 
   const lastView = last

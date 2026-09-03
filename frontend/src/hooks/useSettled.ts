@@ -177,12 +177,13 @@ export function useSettled(refreshKey = 0) {
     }
   }, []);
 
-  // Poll rather than load once. The batch screen falls back to the last settled window
-  // when the pool is idle, and without this it keeps showing whichever window was
-  // newest at page load — so a batch that settles while you are watching never appears.
+  // Only the history screen uses this now, and each pass pages through a couple of
+  // dozen block ranges for two event types. Polling it every few seconds was enough
+  // traffic to get rate-limited, and a failed pass keeps the previous result — which
+  // showed up as history sitting several groups behind.
   useEffect(() => {
     load();
-    const iv = setInterval(load, 8000);
+    const iv = setInterval(load, 20_000);
     return () => clearInterval(iv);
   }, [load, refreshKey]);
 
