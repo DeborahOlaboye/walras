@@ -1,12 +1,29 @@
 # Walras
 
-A Uniswap v4 hook that enforces pool-native batch settlement at a uniform clearing price — no swap can execute against a Walras-governed pool outside a settled batch. Ordering-based MEV becomes structurally impossible, offsetting order flow nets away from LP liquidity, and the price improvement that a normal AMM swap hands to the trader is redirected to LPs instead.
+A Uniswap v4 hook that enforces pool-native batch settlement at a uniform clearing price, no swap can execute against a Walras-governed pool outside a settled batch. Ordering-based MEV becomes structurally impossible, offsetting order flow nets away from LP liquidity and the price improvement that a normal AMM swap hands to the trader is redirected to LPs instead.
 
 Built for the [UHI10 Hookathon](https://atrium.academy/uniswap) (theme: *Sustainable Liquidity and MEV Protection*).
 
+## Try it
+
+| | |
+|---|---|
+| **Live app** | **https://walras.vercel.app** |
+| **Demo video** | https://youtu.be/bA0RbmDjmbA |
+| **Hook on Uniscan** | [`0x1fd0240c08Cd81f1Affc5e70ff78500e9D0DC080`](https://sepolia.uniscan.xyz/address/0x1fd0240c08cd81f1affc5e70ff78500e9d0dc080) |
+
+Connect any wallet on **Unichain Sepolia** (chain 1301). The app mints you free test
+tokens on first visit, so there is nothing to arrange beforehand, place an order, wait
+out the 60-second window, and collect.
+
+Two screens are worth going to directly. **Live group** shows a window filling and the
+share of it that never reaches pool liquidity. **Proof** routes a real swap through a
+standard Uniswap router at the deployed pool and shows the hook rejecting it with
+`DirectSwapsDisabled`, a live call, not a recording.
+
 ## The problem
 
-MEV extraction remains a $550M+/year problem on Ethereum alone. Even as private-mempool tooling has suppressed easy sandwich attacks, a deeper structural issue persists at the AMM level: LPs are continuously adversely selected by arbitrageurs correcting stale pool prices (loss-versus-rebalancing, "LVR"), which pushes LPs toward wider fees or exit — the "unsustainable liquidity" problem the hookathon theme names directly.
+MEV extraction remains a $550M+/year problem on Ethereum alone. Even as private-mempool tooling has suppressed easy sandwich attacks, a deeper structural issue persists at the AMM level, LPs are continuously adversely selected by arbitrageurs correcting stale pool prices (loss-versus-rebalancing, "LVR"), which pushes LPs toward wider fees or exit.
 
 The reason LVR is hard to fix from inside an AMM is that a constant-function curve quotes a *stale* price and fills the entire trade along it. An arbitrageur who knows the true price buys at the curve's average price and captures the whole gap between that average and the true price. Every mechanism below exists to close that gap.
 
@@ -14,11 +31,11 @@ The reason LVR is hard to fix from inside an AMM is that a constant-function cur
 
 1. **Order submission.** Users submit swap intents (direction, amount, limit price, deadline) to an escrow contract, which takes custody of the input token.
 
-2. **Batch accumulation.** Orders accumulate over a batch window. No external keeper is required — settlement is self-triggering: the next interaction with the contract checks whether the current window has closed and settles the prior batch first. The triggering caller is reimbursed from a settlement bounty funded by batch fees, so whoever pays the O(n) settlement gas isn't left worse off than everyone they settled for.
+2. **Batch accumulation.** Orders accumulate over a batch window. No external keeper is required, settlement is self-triggering, the next interaction with the contract checks whether the current window has closed and settles the prior batch first. The triggering caller is reimbursed from a settlement bounty funded by batch fees, so whoever pays the O(n) settlement gas isn't left worse off than everyone they settled for.
 
-3. **Netting.** At settlement, opposite-direction orders net against each other directly. Only the unmatched residual — the net imbalance — ever touches the pool's actual liquidity.
+3. **Netting.** At settlement, opposite-direction orders net against each other directly. Only the unmatched residual, the net imbalance ever touches the pool's actual liquidity.
 
-4. **Residual execution and price discovery.** The residual executes once against the AMM curve via a single `PoolManager.swap()` call, initiated by Walras's own settlement logic. The curve walk ends at a marginal price `P*` — the price at which batch demand, batch supply, and AMM liquidity intersect.
+4. **Residual execution and price discovery.** The residual executes once against the AMM curve via a single `PoolManager.swap()` call, initiated by Walras's own settlement logic. The curve walk ends at a marginal price `P*`, the price at which batch demand, batch supply, and AMM liquidity intersect.
 
 5. **Uniform settlement at `P*`.** Every order in the batch settles at `P*`, netted and residual alike. This is the load-bearing step, and it is what makes the mechanism work:
 
@@ -28,13 +45,13 @@ The reason LVR is hard to fix from inside an AMM is that a constant-function cur
 
 6. **LP compensation on netted volume.** Netted orders never touch the curve, so they would otherwise pay LPs nothing while still relying on the pool for price discovery. Walras charges netted volume the pool's own fee rate and donates it to LPs. LPs therefore earn on gross batch volume while bearing inventory risk only on the residual.
 
-7. **Exclusivity enforcement.** The hook's `beforeSwap` callback rejects any swap whose caller isn't the authorized settlement path — so no router, aggregator, or direct call can bypass the batch and trade against the pool outside it. This is what makes the protection pool-level rather than opt-in.
+7. **Exclusivity enforcement.** The hook's `beforeSwap` callback rejects any swap whose caller isn't the authorized settlement path, so no router, aggregator, or direct call can bypass the batch and trade against the pool outside it. This is what makes the protection pool-level rather than opt-in.
 
 8. **Claims.** Settled proceeds are withdrawn via a pull-based `claim()`, so payout gas cost doesn't scale with batch size.
 
 ### Who pays for the surplus
 
-Settling at `P*` means the residual trader pays more than a plain AMM swap would have charged them. That is the point — but it raises a fair question, since a large honest order can be the residual just as easily as an arbitrageur can. The mechanism does not need to tell them apart, because batch composition already does.
+Settling at `P*` means the residual trader pays more than a plain AMM swap would have charged them. That is the point, but it raises a fair question, since a large honest order can be the residual just as easily as an arbitrageur can. The mechanism does not need to tell them apart, because batch composition already does.
 
 For a trader submitting size `Q` into a batch with residual `R`:
 
@@ -43,29 +60,29 @@ For a trader submitting size `Q` into a batch with residual `R`:
 
 So Walras gives the trader the better fill whenever `R < Q/2`: whenever more than half their order nets away. That condition is not a parameter, it is a property of the flow itself.
 
-Uninformed flow is precisely the flow that finds opposing interest in the batch. It nets heavily, contributes little to the residual, and pays **less** than it would on the open curve — the netted portion has no price impact whatsoever. Informed flow is one-directional by construction; that one-directionality is what makes it toxic. It nets poorly, it becomes the residual, and it pays `P*` across its full size.
+Uninformed flow is precisely the flow that finds opposing interest in the batch. It nets heavily, contributes little to the residual, and pays **less** than it would on the open curve, the netted portion has no price impact whatsoever. Informed flow is one-directional by construction, that one-directionality is what makes it toxic. It nets poorly, it becomes the residual and it pays `P*` across its full size.
 
 There is no threshold to tune and no intent to detect, which also means there is nothing to game: an order cannot manufacture opposing flow to net against without someone genuinely taking the other side.
 
-The remaining case is a large uninformed order arriving in a thin, one-directional batch. It pays `P*` on full size and is worse off than it would have been on the curve. In that moment it is informationally indistinguishable from an arbitrageur, and no pool-level mechanism can separate the two. The limit price is the protection: if `P*` is worse than the trader will accept, the order simply does not fill, and the cost is a missed trade rather than a bad one.
+The remaining case is a large uninformed order arriving in a thin, one-directional batch. It pays `P*` on full size and is worse off than it would have been on the curve. In that moment it is informationally indistinguishable from an arbitrageur, and no pool-level mechanism can separate the two. The limit price is the protection: if `P*` is worse than the trader will accept, the order simply does not fill and the cost is a missed trade rather than a bad one.
 
 ## Prior art, and where Walras differs
 
-Batch auctions with uniform clearing prices are not a new idea, and the two systems that matter here are both in production or funded. Addressing them directly is more useful than leaving the comparison implicit.
+Batch auctions with uniform clearing prices are not a new idea, and the two systems that matter here are both in production.
 
 **Angstrom** (Sorella Labs, $7.5M seed led by Paradigm, backed by the Uniswap Foundation) is the closest comparison: a Uniswap v4 hook that clears each block at a single uniform price and returns arbitrage value to LPs. Walras targets the same failure mode by the same broad mechanism. The difference is the trust and liveness model.
 
-**CoW Protocol** proves the batch-auction mechanism works at scale, but operates as a layer *above* AMMs — solvers compete off-chain and route unmatched flow through on-chain liquidity, Uniswap included, as a fallback.
+**CoW Protocol** proves the batch-auction mechanism works at scale. CoW Swap operates as a layer *above* AMMs, solvers compete off-chain and route unmatched flow through on-chain liquidity, Uniswap included, as a fallback. CoW also ships **CoW AMM**, a pool of its own on Balancer rather than a hook, where solvers bid for the right to rebalance and the executed amounts come out of that off-chain competition. Both halves depend on the same solver network.
 
 | | CoW Protocol | Angstrom | Walras |
 |---|---|---|---|
-| Layer | Above AMMs — routes through pools as one liquidity source | Inside the pool, as a v4 hook | Inside the pool, as a v4 hook |
-| Coverage | Only flow routed through CoW's intent system | Every swap touching the pool | Every swap touching the pool |
+| Layer | CoW Swap above AMMs; CoW AMM a Balancer pool of its own | Inside the pool, as a v4 hook | Inside the pool, as a v4 hook |
+| Coverage | Only flow routed through CoW's intent system, or into a CoW AMM pool | Every swap touching the pool | Every swap touching the pool |
 | Who runs the auction | Competitive off-chain solver network | Off-chain node network staked into the protocol | Nobody — on-chain, permissionless, deterministic |
 | Liveness depends on | Solvers bidding | The node network being live and honest | The next caller to touch the contract |
 | Clearing price source | Solver-proposed, competitively enforced | Node-computed off-chain, verified on settlement | Curve/order-book intersection, computed on-chain |
 
-The honest summary: Angstrom buys richer execution (off-chain limit orders, cross-venue liquidity, a dedicated arbitrage auction) at the cost of a trusted, staked operator set. Walras gives up that richness for a mechanism with no operator set at all — nothing to stake, nothing to slash, nothing to be censored by, and no off-chain component that can go down. Whether that trade is worth making is exactly the question this build is testing.
+The honest summary: Angstrom buys richer execution (off-chain limit orders, cross-venue liquidity, a dedicated arbitrage auction) at the cost of a trusted, staked operator set. Walras gives up that richness for a mechanism with no operator set at all, nothing to stake, nothing to slash, nothing to be censored by, and no off-chain component that can go down. Whether that trade is worth making is exactly the question this build is testing.
 
 ## Why this fits the theme
 
@@ -112,14 +129,24 @@ contracts/
 │   ├── Netting.t.sol
 │   └── ClearingPrice.t.sol
 ├── script/
-│   ├── Deployments.sol       — per-chain v4 addresses and deployment parameters
-│   ├── DeployWalrasHook.s.sol — the hook alone, against an existing PoolManager
-│   └── DeployDemo.s.sol      — tokens, hook, pool and liquidity in one run
+│   ├── Deployments.sol         — per-chain v4 addresses and deployment parameters
+│   ├── DeployWalrasHook.s.sol  — the hook alone, against an existing PoolManager
+│   ├── DeployDemo.s.sol        — tokens, hook, pool and liquidity in one run
+│   └── DeploySwapRouter.s.sol  — a stock v4 router, deployed to be rejected
 ├── lib/                    — v4-core, v4-periphery, forge-std
 ├── foundry.toml
 └── remappings.txt
-frontend/                   — batch status and claims (minimal; the mechanism is the deliverable)
+frontend/
+└── src/
+    ├── app/                — landing, live group, place order, collect, history, proof
+    ├── components/         — shell, header, the netting figure, shared primitives
+    ├── hooks/              — pool state, wallet, orders, settled history, writes
+    └── lib/                — chain clients, config, formatting, netting in TypeScript
 ```
+
+`lib/netting.ts` mirrors `Netting.sol` in the same integer arithmetic, so the split the
+UI shows while a window is still open agrees with the receipt afterwards rather than
+drifting from it.
 
 Contract build is broken into sections, in dependency order:
 
@@ -135,9 +162,8 @@ Contract build is broken into sections, in dependency order:
 ## Tech stack
 
 - Foundry, Solidity 0.8.26, `v4-core` / `v4-periphery` (v4.0.0)
-- Deployed and tested on **Unichain Sepolia** — Uniswap's own L2, already carrying ~$70B of v4's ~$355B cumulative volume despite launching only 9 months ago. Chosen over other L2s for direct ecosystem alignment with the hookathon's primary funder (Uniswap Foundation) and because past UHI hookathon projects have preferentially deployed there.
-- No external oracle dependency, by design — see section 5 above.
-- No sponsor integrations for this cohort (UHI10 has none).
+- Next.js and viem for the frontend.
+- Deployed and tested on **Unichain Sepolia**.
 
 ## Building and testing
 
@@ -204,8 +230,27 @@ Deploy with forge 1.2.x until the script is reworked to call the factory directl
 
 ## Status
 
-All 8 sections complete. 97 tests passing, no compiler warnings.
+Complete and live. 97 tests passing, 89.7% line coverage (100% on both libraries), no
+compiler warnings.
 
-The contract side is feature-complete: orders escrow, batches open and retire themselves, netting and the clearing price resolve on-chain with no oracle, the residual executes once against the curve, LPs are paid on both netted and residual flow, proceeds are claimable, and a settlement that fails refunds its batch rather than taking the pool down with it.
+The contract side is feature-complete: orders escrow, batches open and retire
+themselves, netting and the clearing price resolve on-chain with no oracle, the residual
+executes once against the curve, LPs are paid on both netted and residual flow, proceeds
+are claimable, and a settlement that fails refunds its batch rather than taking the pool
+down with it. All five contracts are deployed to Unichain Sepolia and verified on
+Uniscan.
 
-Deployment scripts are written and simulate cleanly against Unichain Sepolia. Remaining work is the frontend. See the section breakdown above for what's next.
+The frontend is six screens reading live chain state.
+
+### Observed on the live deployment
+
+A settled group of four orders, two in each direction:
+
+| | |
+|---|---|
+| Traded directly between users | **67.3%** of the group's volume |
+| Reached pool liquidity | 12.56 WDA of 37.00 total |
+| Price every order received | 0.96446, identical across all four |
+
+That is the mechanism doing the thing it exists for: most of a group never touches the
+curve, and being first or last in it changes nothing.

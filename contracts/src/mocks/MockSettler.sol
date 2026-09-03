@@ -8,11 +8,14 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 
-/// @notice Stands in for Walras's real settlement path (section 6, not yet built) so the
-/// exclusivity check in WalrasHook.beforeSwap can be tested against a legitimate caller
-/// before the netting/clearing-price/settlement logic exists. Calls `PoolManager.swap`
-/// directly and settles the resulting delta out of its own token balance — exactly the
-/// role the hook itself will play once settlement is wired into it.
+/// @notice A contract that reaches `PoolManager.swap` on its own, used to prove the
+/// exclusivity check in `WalrasHook.beforeSwap` rejects callers it does not recognise.
+///
+/// @dev It began as a stand-in for settlement while that half of the hook did not yet
+/// exist. Now that the hook settles its own batches, this plays the opposite role: it is
+/// the impostor. Because it takes the PoolManager lock itself rather than going through
+/// a router, it reaches `beforeSwap` the same way a real settlement would — which is
+/// what makes its rejection meaningful rather than incidental.
 contract MockSettler is IUnlockCallback {
     using CurrencySettler for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
