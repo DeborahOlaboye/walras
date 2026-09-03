@@ -10,6 +10,7 @@ Built for the [UHI10 Hookathon](https://atrium.academy/uniswap) (theme: *Sustain
 |---|---|
 | **Live app** | **https://walras.vercel.app** |
 | **Demo video** | https://youtu.be/bA0RbmDjmbA |
+| **Pitch Deck** | https://docs.google.com/presentation/d/1XAsS1dmtotq2Xh-SL3DqH5PcsXWOJeyz/edit?usp=sharing&ouid=103055992013959764137&rtpof=true&sd=true |
 | **Hook on Uniscan** | [`0x1fd0240c08Cd81f1Affc5e70ff78500e9D0DC080`](https://sepolia.uniscan.xyz/address/0x1fd0240c08cd81f1affc5e70ff78500e9d0dc080) |
 
 Connect any wallet on **Unichain Sepolia** (chain 1301). The app mints you free test
