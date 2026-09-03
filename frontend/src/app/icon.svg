@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 20" width="34" height="20">
+  <!-- The header mark: two discs meeting. The overlap is where the two sides of a
+       group cancel against each other. Drawn on a dark ground rather than relying on
+       mix-blend-mode, which browser tabs do not honour. -->
+  <rect width="34" height="20" fill="#0a0b09"/>
+  <circle cx="10" cy="10" r="10" fill="#c9f24d"/>
+  <circle cx="24" cy="10" r="10" fill="#f2f4ef"/>
+  <path d="M17 1.75a10 10 0 0 0 0 16.5 10 10 0 0 0 0-16.5Z" fill="#5c7a26"/>
+</svg>

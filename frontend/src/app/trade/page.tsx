@@ -60,6 +60,11 @@ export default function TradeScreen() {
   /// Both sides matter: a wallet holding only one token cannot place an order in the
   /// other direction, which is half the point of the demo.
   const needsTokens = bal.bal0 === 0n && bal.bal1 === 0n;
+  /// Shown next to the submit button so a second order reads as a second order,
+  /// rather than looking like the first one failed and is being retried.
+  const myOrdersInGroup = address
+    ? b.orders.filter((o) => o.owner.toLowerCase() === address.toLowerCase()).length
+    : 0;
 
   // At the pool's current mid. Deliberately labelled as a reference rather than a
   // quote — the real fill is whatever the batch clears at.
@@ -396,8 +401,27 @@ export default function TradeScreen() {
               fontWeight: 600,
             }}
           >
-            {pending === "Approve" ? "Approving…" : `1 · Allow Walras to use your ${inSym}`}
+            {pending === "Approve"
+              ? "Approving…"
+              : `Step 1 of 2 · Allow Walras to use your ${inSym}`}
           </button>
+        )}
+
+        {/* Setup and the order itself are separate signatures, and unlabelled prompts
+            are easily mistaken for repeated attempts at the same thing — someone can
+            sign four times and believe they placed four orders. */}
+        {needsApprove && (
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 13,
+              color: t.faint,
+              textAlign: "center",
+              lineHeight: 1.45,
+            }}
+          >
+            This one is a permission, not the order. The next button actually places it.
+          </div>
         )}
 
         <button
@@ -419,7 +443,7 @@ export default function TradeScreen() {
             ? "Placing…"
             : !address
               ? "Connect a wallet"
-              : `${needsApprove ? "2 · " : ""}Place order for ${f(Number(amount) || 0, 2)} ${inSym}`}
+              : `${needsApprove ? "Step 2 of 2 · " : ""}Place order for ${f(Number(amount) || 0, 2)} ${inSym}`}
         </button>
 
         <div
@@ -434,6 +458,8 @@ export default function TradeScreen() {
           {b.phase === "open"
             ? `joins group #${String(b.currentId)} · ${secondsLeft(b.remainMs)} left to join`
             : `starts a new ${Number(b.batchDuration)}-second group`}
+          {myOrdersInGroup > 0 &&
+            ` · you already have ${myOrdersInGroup} in this group`}
         </div>
 
       </Panel>

@@ -86,11 +86,16 @@ export function useActions(onDone?: () => void) {
   /// Both tokens in one action. A wallet needs each side to be able to place orders
   /// in both directions, and making someone find the faucet twice is a good way to
   /// have them give up before seeing anything work.
+  ///
+  /// Two wallet prompts come out of one button press, so each is announced — otherwise
+  /// they arrive unlabelled and read as the app asking for the same thing twice.
   const mintBoth = useCallback(async () => {
+    flash(`Approve prompt 1 of 2 — sending you ${5_000} test WDA`);
     const first = await mint(0);
     if (!first) return null;
+    flash(`Approve prompt 2 of 2 — sending you ${5_000} test WDB`);
     return mint(1);
-  }, [mint]);
+  }, [mint, flash]);
 
   const approve = useCallback(
     (which: 0 | 1) =>
