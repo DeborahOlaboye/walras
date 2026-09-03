@@ -64,7 +64,7 @@ export default function ClaimsScreen() {
             Your orders
           </div>
           <div style={{ fontSize: 15, color: t.dim, marginTop: 6 }}>
-            Your tokens are not sent automatically — collect them here. They always go to the wallet that placed the order, whoever presses the button.
+            Your tokens are not sent automatically, collect them here.
           </div>
         </div>
         <button
